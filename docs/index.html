@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bulk OCR: read a pile of documents on your own machine</title>
+<meta name="description" content="Bulk OCR for PDFs, scans and receipts with a local DeepSeek OCR model. Each page comes back as text, with the sections that were read marked on the page. Nothing is uploaded.">
+<meta property="og:title" content="Bulk OCR: read a pile of documents on your own machine">
+<meta property="og:description" content="Local OCR for PDFs, scans and receipts with DeepSeek OCR 2 on Ollama. Marked pages, folders, search.">
+<meta property="og:image" content="https://diwakersurya.github.io/ollama-deepseek-ocr/assets/app-dark.png">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23131313'/%3E%3Crect x='7' y='6' width='18' height='4' rx='1' fill='%23ef6c00'/%3E%3Crect x='7' y='13' width='18' height='5' rx='1' fill='%2300897b'/%3E%3Crect x='7' y='21' width='11' height='5' rx='1' fill='%238e24aa'/%3E%3C/svg%3E">
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; font-display: swap; src: url(fonts/figtree-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 500; font-display: swap; src: url(fonts/figtree-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; font-display: swap; src: url(fonts/figtree-latin-600-normal.woff2) format("woff2"); }
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#ffffff, #131313);
+    --raised: light-dark(#f4f4f4, #1c1c1c);
+    --line: light-dark(#e1e1e1, #303030);
+    --text: light-dark(#141414, #ececec);
+    --muted: light-dark(#5d5d5d, #a6a6a6);
+    --solid: light-dark(#141414, #f1f1f1);
+    --on-solid: light-dark(#ffffff, #141414);
+    /* The four kinds of section the model marks on a page. The only colours on this site. */
+    --title: #ef6c00; --text-kind: #00897b; --table: #8e24aa; --image: #1e88e5;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 17px/1.55 Figtree, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--text-kind); outline-offset: 3px; border-radius: 4px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+  .mark { display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
+  header nav a { margin-left: 24px; color: var(--muted); text-decoration: none; }
+  header nav a:hover { color: var(--text); }
+
+  .hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 56px; align-items: start; padding: 56px 0 88px; }
+  h1 { margin: 0 0 20px; font-size: clamp(2.3rem, 4.6vw, 3.5rem); font-weight: 600; line-height: 1.06; letter-spacing: -0.02em; text-wrap: balance; }
+  .lede { margin: 0 0 28px; font-size: 1.15rem; color: var(--muted); max-width: 44ch; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .btn { display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid var(--line); font-weight: 500; text-decoration: none; }
+  .btn.solid { background: var(--solid); color: var(--on-solid); border-color: var(--solid); }
+  .btn:hover { border-color: var(--text); }
+  .fine { margin: 0; font-size: 0.92rem; color: var(--muted); max-width: 44ch; }
+
+  /* The demo: the page as the model saw it, each section it read in a box. */
+  .demo { border: 1px solid var(--line); border-radius: 16px; background: var(--raised); padding: 16px; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 0.86rem; }
+  .chip, .seg button { font: inherit; color: inherit; cursor: pointer; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-weight: 500; }
+  .chip i { width: 10px; height: 10px; border-radius: 2px; background: var(--k); }
+  .chip[aria-pressed=false] { opacity: 0.45; }
+  .seg { margin-left: auto; display: inline-flex; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+  .seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--muted); }
+  .seg button[aria-pressed=true] { background: var(--raised); color: var(--text); font-weight: 500; }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .paper { position: relative; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
+  .paper img { display: block; width: 100%; height: auto; }
+  .box { position: absolute; border: 1.5px solid var(--k); background: color-mix(in srgb, var(--k) 9%, transparent); border-radius: 2px; }
+  .box:hover, .box:focus-visible { background: color-mix(in srgb, var(--k) 26%, transparent); }
+  .box b { position: absolute; left: -1.5px; bottom: 100%; padding: 0 5px; background: var(--k); color: #fff; font: 600 11px/17px Figtree, sans-serif; white-space: nowrap; display: none; }
+  .box:hover b, .box:focus-visible b { display: block; }
+  .box[hidden] { display: none; }
+  .read { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 0.82rem; line-height: 1.5; min-width: 0; }
+  .read h3 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
+  .read p { margin: 0 0 6px; }
+  .read table { width: 100%; border-collapse: collapse; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  .read th, .read td { padding: 5px 8px; border: 1px solid var(--line); text-align: left; }
+  .read th { color: var(--muted); font-weight: 500; }
+  .read pre { margin: 0; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .demo figcaption { margin-top: 12px; font-size: 0.86rem; color: var(--muted); }
+
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  h2 { margin: 0 0 32px; font-size: 1.7rem; font-weight: 600; letter-spacing: -0.01em; }
+  dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 56px; }
+  dt { font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+  dt i { width: 10px; height: 10px; border-radius: 2px; background: var(--k); flex-shrink: 0; }
+  dd { margin: 0; color: var(--muted); max-width: 52ch; }
+  .shot { margin: 0; }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); }
+  .shot figcaption { margin-top: 12px; color: var(--muted); font-size: 0.92rem; }
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 28px; max-width: 760px; }
+  ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 16px; }
+  ol.steps > li::before { content: counter(step); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); font-weight: 600; font-size: 0.92rem; }
+  ol.steps p { margin: 3px 0 10px; }
+  .code { position: relative; }
+  pre.cmd { margin: 0; padding: 14px 76px 14px 16px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; font: 14px/1.6 var(--mono); overflow-x: auto; }
+  .copy { position: absolute; top: 8px; right: 8px; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font: 500 0.8rem Figtree, sans-serif; cursor: pointer; }
+  .copy:hover { color: var(--text); border-color: var(--text); }
+  ul.notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; max-width: 68ch; color: var(--muted); }
+  ul.notes strong { color: var(--text); font-weight: 600; }
+  code { font: 0.9em var(--mono); }
+  footer { padding: 32px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.92rem; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+  @media (max-width: 920px) {
+    .hero { grid-template-columns: minmax(0, 1fr); gap: 40px; padding: 32px 0 56px; }
+    dl { grid-template-columns: minmax(0, 1fr); }
+    section { padding: 56px 0; }
+  }
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    .pair { grid-template-columns: minmax(0, 1fr); }
+    header nav a:first-child { display: none; }
+    .seg { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="mark" href="#top" aria-label="Bulk OCR">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="5" width="22" height="5" rx="1.5" fill="#ef6c00"/><rect x="5" y="13" width="22" height="6" rx="1.5" fill="#00897b"/><rect x="5" y="22" width="13" height="5" rx="1.5" fill="#8e24aa"/></svg>
+      Bulk OCR
+    </a>
+    <nav>
+      <a href="#run">Run it</a>
+      <a href="https://github.com/diwakersurya/ollama-deepseek-ocr">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero">
+      <div>
+        <h1>Read a pile of documents on your own machine</h1>
+        <p class="lede">Bulk OCR for PDFs, scans and receipts with a local DeepSeek OCR model. Each page comes back as text, with the sections that were read marked on the page.</p>
+        <div class="actions">
+          <a class="btn solid" href="https://github.com/diwakersurya/ollama-deepseek-ocr">Get it on GitHub</a>
+          <a class="btn" href="#run">How to run it</a>
+        </div>
+        <p class="fine">Free and open source. The model runs through Ollama on your computer, so no document is uploaded anywhere.</p>
+      </div>
+
+      <figure class="demo" style="margin:0" aria-label="A receipt as read by the app">
+        <div class="bar">
+          <button class="chip" type="button" aria-pressed="true" data-kind="title" style="--k:var(--title)"><i></i>Headings 1</button>
+          <button class="chip" type="button" aria-pressed="true" data-kind="text" style="--k:var(--text-kind)"><i></i>Text 5</button>
+          <button class="chip" type="button" aria-pressed="true" data-kind="table" style="--k:var(--table)"><i></i>Tables 1</button>
+          <span class="seg" role="group" aria-label="How the text is shown">
+            <button type="button" aria-pressed="true" data-view="formatted">Formatted</button>
+            <button type="button" aria-pressed="false" data-view="markdown">Markdown</button>
+          </span>
+        </div>
+        <div class="pair">
+          <div class="paper" id="paper">
+            <img src="assets/receipt-page.png" width="625" height="896" alt="A cafe receipt: four items, subtotal, VAT and a total of 32.70">
+          </div>
+          <div class="read">
+            <div id="formatted">
+              <h3>Corner Cafe</h3>
+              <p>14 Harbour Lane, Bristol</p>
+              <p>20 Nov 2026 09:42<br>Receipt 48213</p>
+              <table>
+                <tr><th>Item</th><th>Qty</th><th>Price</th></tr>
+                <tr><td>Flat white</td><td>2</td><td>9.00</td></tr>
+                <tr><td>Almond croissant</td><td>1</td><td>4.50</td></tr>
+                <tr><td>Sparkling water</td><td>3</td><td>7.50</td></tr>
+                <tr><td>Sourdough toast</td><td>1</td><td>6.25</td></tr>
+                <tr><td><strong>Subtotal</strong></td><td></td><td><strong>27.25</strong></td></tr>
+                <tr><td>VAT 20%</td><td></td><td><strong>5.45</strong></td></tr>
+                <tr><td><strong>Total</strong></td><td></td><td><strong>32.70</strong></td></tr>
+              </table>
+              <p>Paid by card ending 4471</p>
+              <p>Thank you for visiting. Returns within 30 days with this receipt.</p>
+            </div>
+            <pre id="markdown" hidden># Corner Cafe
+
+14 Harbour Lane, Bristol
+
+20 Nov 2026 09:42  
+Receipt 48213  
+
+| Item    | Qty  | Price  |
+|---|---|---|
+| Flat white    | 2    | 9.00  |
+| Almond croissant    | 1    | 4.50  |
+| Sparkling water    | 3    | 7.50  |
+| Sourdough toast    | 1    | 6.25  |
+| **Subtotal**    |    | **27.25** |
+| VAT 20%    |    | **5.45** |
+| **Total**    |    | **32.70** |
+
+Paid by card ending 4471  
+
+Thank you for visiting. Returns within 30 days with this receipt.</pre>
+          </div>
+        </div>
+        <figcaption>Not a mock-up: this receipt was read by DeepSeek OCR 2 on a laptop, and these are the boxes and the text it returned. Point at a box to see what kind of section it is.</figcaption>
+      </figure>
+    </div>
+
+    <section>
+      <div>
+        <h2>What it does</h2>
+        <dl>
+          <div><dt><i style="--k:var(--title)"></i>Reads in bulk</dt><dd>Drop files on the app or point the script at a directory. PDFs, scans and phone photos are read one page at a time. Run it again and it skips what is done and retries what failed.</dd></div>
+          <div><dt><i style="--k:var(--text-kind)"></i>Shows what it read</dt><dd>Every page image gets a box on each section the model read: headings, text, tables and images. The text sits beside it, formatted or as markdown, ready to copy or download.</dd></div>
+          <div><dt><i style="--k:var(--table)"></i>Keeps kinds of document apart</dt><dd>Put receipts in one folder and contracts in another. Each folder has its own files, its own page images and its own search. Rename or delete a folder from the app.</dd></div>
+          <div><dt><i style="--k:var(--image)"></i>Searches by meaning</dt><dd>The text is indexed with a small embedding model, so you can search a folder for “coffee” and find the flat white. Search works in the app and from the terminal.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section>
+      <figure class="shot">
+        <picture>
+          <source srcset="assets/app-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="assets/app-light.png" width="1440" height="913" loading="lazy" alt="The app: folders on the left, the files of the Receipts folder in the middle, and a receipt page with its marked sections beside the text that was read">
+        </picture>
+        <figcaption>The app. Folders, the files in one folder, and the open file. It follows your system’s light or dark setting.</figcaption>
+      </figure>
+    </section>
+
+    <section id="run">
+      <h2>Run it</h2>
+      <ol class="steps">
+        <li><div>
+          <p>Install <a href="https://bun.sh">Bun</a>, Ghostscript and <a href="https://ollama.com">Ollama</a>. On a Mac with Homebrew:</p>
+          <div class="code"><pre class="cmd">brew install oven-sh/bun/bun ghostscript ollama
+brew services start ollama</pre></div>
+        </div></li>
+        <li><div>
+          <p>Get the two models: one reads pages, one powers search.</p>
+          <div class="code"><pre class="cmd">ollama pull hf.co/sabafallah/DeepSeek-OCR-2-GGUF:Q4_K_M
+ollama pull nomic-embed-text</pre></div>
+        </div></li>
+        <li><div>
+          <p>Get the app.</p>
+          <div class="code"><pre class="cmd">git clone https://github.com/diwakersurya/ollama-deepseek-ocr
+cd ollama-deepseek-ocr
+bun install</pre></div>
+        </div></li>
+        <li><div>
+          <p>Start it, then open <code>http://127.0.0.1:4477</code>.</p>
+          <div class="code"><pre class="cmd">bun run serve</pre></div>
+          <p style="margin-top:14px">Or skip the app and read a directory from the terminal:</p>
+          <div class="code"><pre class="cmd">bun run ocr -f Receipts ./scans
+bun run search -f Receipts "taxi"</pre></div>
+        </div></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Good to know</h2>
+      <ul class="notes">
+        <li><strong>Ollama 0.40 or newer.</strong> Older versions cannot load DeepSeek OCR 2. Any server with an OpenAI-compatible API works too, such as llama.cpp or LM Studio.</li>
+        <li><strong>Private by design.</strong> The app listens only on your own machine and talks only to the model server you configure. Fonts and icons are served by the app itself.</li>
+        <li><strong>Speed.</strong> About five seconds a page on an M3 laptop, one page at a time.</li>
+        <li><strong>Phone photos.</strong> HEIC and TIFF are converted with a tool built into macOS, so those two formats need a Mac. PDF, PNG, JPEG and WebP work anywhere.</li>
+        <li><strong>The text is yours.</strong> Each document is also written as a plain markdown file in a folder on disk.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <span>MIT licensed. Built with Bun, React and the Astryx design system.</span>
+    <a href="https://github.com/diwakersurya/ollama-deepseek-ocr">github.com/diwakersurya/ollama-deepseek-ocr</a>
+  </footer>
+</div>
+<script>
+// What the model returned for the receipt above: section type and box (0..999 of width and height).
+const BOXES = [{"type":"sub_title","box":[87,51,441,94]},{"type":"text","box":[87,104,423,132]},{"type":"text","box":[86,159,362,188]},{"type":"text","box":[660,159,863,188]},{"type":"table","box":[84,206,911,583]},{"type":"text","box":[86,628,432,658]},{"type":"text","box":[85,698,697,756]}];
+const kindOf = (t) => /title/.test(t) ? "title" : /table/.test(t) ? "table" : /image|figure/.test(t) ? "image" : "text";
+const ink = { title: "var(--title)", text: "var(--text-kind)", table: "var(--table)", image: "var(--image)" };
+const paper = document.getElementById("paper");
+for (const b of BOXES) {
+  const [x1, y1, x2, y2] = b.box.map((n) => n / 9.99);
+  const el = document.createElement("div");
+  el.className = "box";
+  el.tabIndex = 0;
+  el.dataset.kind = kindOf(b.type);
+  el.style.cssText = "--k:" + ink[el.dataset.kind] + ";left:" + x1 + "%;top:" + y1 + "%;width:" + (x2 - x1) + "%;height:" + (y2 - y1) + "%";
+  const label = document.createElement("b");
+  label.textContent = b.type.replace(/_/g, " ");
+  el.append(label);
+  paper.append(el);
+}
+for (const chip of document.querySelectorAll(".chip")) chip.onclick = () => {
+  const on = chip.getAttribute("aria-pressed") !== "true";
+  chip.setAttribute("aria-pressed", on);
+  for (const el of paper.querySelectorAll('.box[data-kind="' + chip.dataset.kind + '"]')) el.hidden = !on;
+};
+for (const btn of document.querySelectorAll(".seg button")) btn.onclick = () => {
+  for (const other of document.querySelectorAll(".seg button")) other.setAttribute("aria-pressed", other === btn);
+  document.getElementById("formatted").hidden = btn.dataset.view !== "formatted";
+  document.getElementById("markdown").hidden = btn.dataset.view !== "markdown";
+};
+for (const pre of document.querySelectorAll("pre.cmd")) {
+  const copy = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+  copy.onclick = async () => { await navigator.clipboard.writeText(pre.textContent); copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1500); };
+  pre.parentElement.append(copy);
+}
+</script>
+</body>
+</html>

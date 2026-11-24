@@ -2,6 +2,8 @@
 
 Bulk OCR for PDFs, scans, photos and receipts with a local DeepSeek OCR model. Nothing leaves your machine.
 
+**Site, with a live example: https://diwakersurya.github.io/ollama-deepseek-ocr/**
+
 - **OCR**: file -> page images -> model -> one markdown file per document + a SQLite database.
 - **Page view**: each page image with a coloured box on every section the model read (headings, text, tables,
   images), beside the text. Text shows formatted or as markdown, and can be copied or downloaded.
