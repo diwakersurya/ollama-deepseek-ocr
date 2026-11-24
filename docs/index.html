@@ -92,6 +92,15 @@
   pre.cmd { margin: 0; padding: 14px 76px 14px 16px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; font: 14px/1.6 var(--mono); overflow-x: auto; }
   .copy { position: absolute; top: 8px; right: 8px; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font: 500 0.8rem Figtree, sans-serif; cursor: pointer; }
   .copy:hover { color: var(--text); border-color: var(--text); }
+  /* One computer reads, the phone is the screen. */
+  .phone { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 64px; align-items: start; }
+  .phone .intro { margin: -12px 0 32px; color: var(--muted); max-width: 60ch; }
+  .phone figure { margin: 0; }
+  .phone img { display: block; width: 100%; height: auto; border-radius: 30px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(0 0 0 / 0.2); }
+  .phone figcaption { margin-top: 12px; font-size: 0.86rem; color: var(--muted); }
+  .addr { display: block; padding: 14px 16px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; font: 14px/1.6 var(--mono); overflow-wrap: anywhere; }
+  .aside { margin: 28px 0 0; max-width: 60ch; color: var(--muted); font-size: 0.95rem; }
+  .aside strong { color: var(--text); font-weight: 600; }
   ul.notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; max-width: 68ch; color: var(--muted); }
   ul.notes strong { color: var(--text); font-weight: 600; }
   code { font: 0.9em var(--mono); }
@@ -99,13 +108,15 @@
 
   @media (max-width: 920px) {
     .hero { grid-template-columns: minmax(0, 1fr); gap: 40px; padding: 32px 0 56px; }
+    .phone { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+    .phone figure { max-width: 300px; }
     dl { grid-template-columns: minmax(0, 1fr); }
     section { padding: 56px 0; }
   }
   @media (max-width: 560px) {
     body { font-size: 16px; }
     .pair { grid-template-columns: minmax(0, 1fr); }
-    header nav a:first-child { display: none; }
+    header nav a:not(:last-child) { display: none; }
     .seg { margin-left: 0; }
   }
 </style>
@@ -119,6 +130,7 @@
     </a>
     <nav>
       <a href="#run">Run it</a>
+      <a href="#phone">From your phone</a>
       <a href="https://github.com/diwakersurya/ollama-deepseek-ocr">GitHub</a>
     </nav>
   </header>
@@ -244,11 +256,46 @@ bun run search -f Receipts "taxi"</pre></div>
       </ol>
     </section>
 
+    <section id="phone">
+      <h2>Use it from your phone</h2>
+      <div class="phone">
+        <div>
+          <p class="intro">The reading happens on your computer. With <a href="https://tailscale.com">Tailscale</a>, your phone, tablet or another laptop can open the same app from anywhere and add files, look at pages and search. Photograph a receipt on the phone and it is read on the computer.</p>
+          <ol class="steps">
+            <li><div>
+              <p>Install Tailscale on the computer and on the phone, and sign in to the same account on both.</p>
+            </div></li>
+            <li><div>
+              <p>On the computer, start the app so it also answers on its Tailscale name. It prints the address for your other devices.</p>
+              <div class="code"><pre class="cmd">bun run serve --tailnet</pre></div>
+            </div></li>
+            <li><div>
+              <p>Still on the computer, turn the link on. This is needed once.</p>
+              <div class="code"><pre class="cmd">tailscale serve --bg 4477</pre></div>
+            </div></li>
+            <li><div>
+              <p>On the phone, switch Tailscale on and open the address that was printed. It looks like this:</p>
+              <span class="addr">https://your-computer.your-tailnet.ts.net/</span>
+            </div></li>
+          </ol>
+          <p class="aside"><strong>Who can open it.</strong> Only devices signed in to your Tailscale network. The app still listens on your computer alone, so nobody on the same Wi-Fi or on the internet can reach it. There is no sign-in in the app itself, so on a network you share with other people their devices can open it too. The <a href="https://github.com/diwakersurya/ollama-deepseek-ocr#one-computer-reads-your-other-devices-use-it-tailscale">README</a> has the details, renaming and what to check when it does not load.</p>
+        </div>
+        <figure>
+          <picture>
+            <source srcset="assets/phone-dark.png" media="(prefers-color-scheme: dark)">
+            <img src="assets/phone-light.png" width="780" height="1560" loading="lazy" alt="The app on a phone: a back arrow, the receipt's name, and the receipt page with its marked sections filling the screen">
+          </picture>
+          <figcaption>On a phone the file list and the open file take turns. Tap a box to see what kind of section it is.</figcaption>
+        </figure>
+      </div>
+    </section>
+
     <section>
       <h2>Good to know</h2>
       <ul class="notes">
         <li><strong>Ollama 0.40 or newer.</strong> Older versions cannot load DeepSeek OCR 2. Any server with an OpenAI-compatible API works too, such as llama.cpp or LM Studio.</li>
         <li><strong>Private by design.</strong> The app listens only on your own machine and talks only to the model server you configure. Fonts and icons are served by the app itself.</li>
+        <li><strong>It says what is missing.</strong> If Ollama is not running or a model is not downloaded, the app shows the command that fixes it. Files wait and are read once it is fixed; they are not marked as failed.</li>
         <li><strong>Speed.</strong> About five seconds a page on an M3 laptop, one page at a time.</li>
         <li><strong>Phone photos.</strong> HEIC and TIFF are converted with a tool built into macOS, so those two formats need a Mac. PDF, PNG, JPEG and WebP work anywhere.</li>
         <li><strong>The text is yours.</strong> Each document is also written as a plain markdown file in a folder on disk.</li>
