@@ -2,6 +2,7 @@
   "name": "ollama-deepseek-ocr",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "serve": "bun src/cli.ts serve",

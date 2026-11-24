@@ -152,3 +152,7 @@ test/ocr.test.ts  the whole flow against a stand-in model server
 - Delete only ever removes files inside the folder's own directory.
 - Ghostscript runs with `-dSAFER`, so a PDF cannot read or write other files.
 - OCR text is shown as text; HTML in it is never run and images it points to are never loaded.
+
+## License
+
+[MIT](LICENSE)
