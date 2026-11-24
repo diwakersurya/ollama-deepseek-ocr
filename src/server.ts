@@ -6,42 +6,36 @@ import type { Config } from "./config";
 import { openDb } from "./db";
 import { fail } from "./errors";
 import { folderConfig, folderStats, listFolders, removeFolder, renameFolder } from "./folders";
+import { type Problem, SetupError, diagnose } from "./health";
 import { SUPPORTED, addFile, addPath, deleteFile, processFile, resetFiles } from "./pipeline";
 import { indexPending, search } from "./search";
 import { folderName } from "./shared/schema";
 import app from "./web/index.html";
 
 /**
- * Only the browser on this machine may call the API: the Host must be local (blocks DNS
- * rebinding) and a request from another website (it carries its own Origin) is refused.
+ * Who may call the API. The request must be addressed to this computer by a name we know: its own
+ * (localhost) or one listed in allowedHosts, such as its tailnet name. That blocks DNS rebinding.
+ * A request made by another website carries that site's Origin and is refused.
  */
-export function allowed(req: Request) {
+export function allowed(req: Request, extraHosts: readonly string[] = []) {
   const url = new URL(req.url);
-  if (!["localhost", "127.0.0.1"].includes(url.hostname)) return false;
+  if (!["localhost", "127.0.0.1", ...extraHosts].includes(url.hostname)) return false;
   const origin = req.headers.get("origin");
-  return !origin || origin === url.origin;
+  if (!origin || origin === url.origin) return true;
+  // Behind "tailscale serve" the page is https on the tailnet name while we are reached as plain http.
+  try {
+    return extraHosts.includes(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 type Folder = { db: Database; cfg: Config };
-type Health = { state: "ok" | "warn" | "down"; detail: string };
 
-/** Is the model server up, and does it list the model? */
-async function health(baseUrl: string, model: string): Promise<Health> {
-  try {
-    const res = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return { state: "down", detail: `${baseUrl} answered ${res.status}` };
-    const ids = (((await res.json()) as { data?: { id: string }[] }).data ?? []).map((m) => m.id);
-    return ids.some((id) => id === model || id === model + ":latest")
-      ? { state: "ok", detail: model }
-      : { state: "warn", detail: `${model} is not listed by ${baseUrl}` };
-  } catch {
-    return { state: "down", detail: `${baseUrl} is not reachable` };
-  }
-}
-
-export async function startServer(cfg: Config, { dev = false } = {}) {
+/** retryMs: how long to wait before trying again while a setup problem stops the reading. */
+export async function startServer(cfg: Config, { dev = false, retryMs = 10_000 } = {}) {
   const opened = new Map<string, Folder>();
   /** The folder's own database and settings. Unknown folder: 404, unless `create`. */
   const open = (name: string, create = false) => {
@@ -62,12 +56,40 @@ export async function startServer(cfg: Config, { dev = false } = {}) {
   // One file at a time across all folders (one model), in the order added.
   let queue: Promise<unknown> = Promise.resolve();
   let waiting = 0;
-  const enqueue = ({ db, cfg: folderCfg }: Folder, id: number) => {
+  let stopped = false;
+  let paused: Problem | null = null; // a setup problem is holding the queue
+  let indexProblem: Problem | null = null; // files were read but could not be made searchable
+
+  /** Reads one file. While the setup is broken the file keeps waiting and we try again: nothing is marked failed. */
+  const read = async ({ db, cfg: folderCfg }: Folder, id: number) => {
+    while (!stopped) {
+      try {
+        await processFile(db, folderCfg, id);
+        paused = null;
+        return;
+      } catch (e) {
+        if (!(e instanceof SetupError)) throw e;
+        paused = e.problem;
+        await Bun.sleep(retryMs);
+      }
+    }
+  };
+  const index = async ({ db }: Folder) => {
+    if (!cfg.search.enabled || stopped) return;
+    try {
+      await indexPending(db, cfg.search);
+      indexProblem = null;
+    } catch (e) {
+      // The text is safe; only search is behind. It catches up on the next file or on "bun run index".
+      indexProblem = e instanceof SetupError ? e.problem : { id: "index", level: "warning", title: "Search is behind", detail: e instanceof Error ? e.message : String(e), fix: "bun run index" };
+    }
+  };
+  const enqueue = (folder: Folder, id: number) => {
     waiting++;
     queue = queue
-      .then(() => processFile(db, folderCfg, id))
-      .then(() => (cfg.search.enabled ? indexPending(db, cfg.search) : 0))
-      .catch((e) => console.error("search index:", e instanceof Error ? e.message : e))
+      .then(() => read(folder, id))
+      .then(() => index(folder))
+      .catch((e) => console.error("queue:", e instanceof Error ? e.message : e))
       .finally(() => waiting--);
   };
   // Files left unfinished by the last run.
@@ -77,27 +99,27 @@ export async function startServer(cfg: Config, { dev = false } = {}) {
     for (const { id } of rows as { id: number }[]) enqueue(folder, id);
   }
 
-  // ponytail: model servers are asked at most every 5 s, however many tabs poll.
+  // ponytail: the setup is checked at most every 5 s, however many tabs ask.
   let checked = 0;
-  let models: { ocr: Health; search: Health | null } | null = null;
+  let found: Problem[] = [];
   const status = async () => {
-    if (!models || Date.now() - checked > 5000) {
+    if (Date.now() - checked > 5000) {
       checked = Date.now();
-      models = {
-        ocr: await health(cfg.ocr.baseUrl, cfg.ocr.model),
-        search: cfg.search.enabled ? await health(cfg.search.baseUrl, cfg.search.model) : null,
-      };
+      found = await diagnose(cfg);
     }
-    return { ...models, waiting };
+    // What stopped the queue is the most exact account of a problem, so it comes first; one line per problem.
+    const problems = [paused, indexProblem, ...found].filter((p, i, all): p is Problem => p !== null && all.findIndex((o) => o?.id === p.id) === i);
+    return { waiting, paused: paused !== null, search: cfg.search.enabled, problems };
   };
 
   type Req = Bun.BunRequest<any>;
   const api = (handler: (req: Req) => Response | Promise<Response>) => async (req: Req) => {
-    if (!allowed(req)) return json({ error: "forbidden" }, 403);
+    if (!allowed(req, cfg.allowedHosts)) return json({ error: "forbidden" }, 403);
     try {
       return await handler(req);
     } catch (e) {
-      return json({ error: e instanceof Error ? e.message : String(e) }, (e as { status?: number }).status ?? 500);
+      const status = e instanceof SetupError ? 503 : ((e as { status?: number }).status ?? 500);
+      return json({ error: e instanceof Error ? e.message : String(e) }, status);
     }
   };
   const fileId = (req: Req) => {
@@ -112,7 +134,7 @@ export async function startServer(cfg: Config, { dev = false } = {}) {
   };
 
   const server = Bun.serve({
-    hostname: "127.0.0.1", // never reachable from the network
+    hostname: cfg.host, // 127.0.0.1 unless config.json says otherwise: not reachable from the network
     port: cfg.port,
     development: dev,
     maxRequestBodySize: 2 * 1024 ** 3,
@@ -258,5 +280,12 @@ export async function startServer(cfg: Config, { dev = false } = {}) {
     fetch: () => json({ error: "not found" }, 404),
   });
 
-  return { server, idle: () => queue };
+  return {
+    server,
+    idle: () => queue,
+    stop: () => {
+      stopped = true;
+      return server.stop(true);
+    },
+  };
 }

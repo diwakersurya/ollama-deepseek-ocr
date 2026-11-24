@@ -7,6 +7,7 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import type { Config } from "./config";
 import { fail } from "./errors";
+import { SetupError, answered, fromAnswer, fromThrown } from "./health";
 
 export const SUPPORTED = /\.(pdf|png|jpe?g|webp|heic|heif|tiff?|gif|bmp)$/i;
 const SENT_AS_IS = /\.(png|jpe?g|webp)$/i;
@@ -112,6 +113,7 @@ async function toPageImages(path: string, dir: string, dpi: number) {
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   if (/\.pdf$/i.test(path)) {
+    if (!Bun.which("gs")) throw new Error("Ghostscript is not installed, so PDFs cannot be read. Install it with: brew install ghostscript. Then use Read again on this file.");
     // -dSAFER: the PDF cannot read or write any file but itself and the output.
     await run(
       "ghostscript (gs)",
@@ -121,6 +123,7 @@ async function toPageImages(path: string, dir: string, dpi: number) {
     await Bun.write(join(dir, "00001" + extname(path).toLowerCase()), Bun.file(path));
   } else {
     // ponytail: macOS built-in converter for HEIC/TIFF/GIF/BMP, first frame only. Other OS: add a converter here.
+    if (!Bun.which("sips")) throw new Error("This kind of image can only be read on macOS. Save it as PNG or JPEG and add it again.");
     await run("sips", $`sips -s format png ${path} --out ${join(dir, "00001.png")}`);
   }
   return (await readdir(dir)).sort();
@@ -129,7 +132,7 @@ async function toPageImages(path: string, dir: string, dpi: number) {
 async function ask(image: string, ocr: Config["ocr"], prompt: string) {
   const file = Bun.file(image);
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
-  const res = await fetch(`${ocr.baseUrl}/chat/completions`, {
+  const request = fetch(`${ocr.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     signal: AbortSignal.timeout(ocr.timeoutMs),
@@ -148,7 +151,16 @@ async function ask(image: string, ocr: Config["ocr"], prompt: string) {
       ],
     }),
   });
-  if (!res.ok) throw new Error(`OCR server ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  const res = await request.catch((e) => {
+    const problem = fromThrown("ocr", ocr.baseUrl, e);
+    if (problem) throw new SetupError(problem);
+    throw new Error(`The model did not finish this page in ${Math.round(ocr.timeoutMs / 60_000)} minutes. Lower pdfDpi, or raise ocr.timeoutMs in config.json.`);
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    const problem = fromAnswer("ocr", ocr.baseUrl, ocr.model, res.status, body);
+    throw problem ? new SetupError(problem) : new Error(answered("ocr", res.status, body));
+  }
   const json = (await res.json()) as { choices: { message: { content: string | null } }[] };
   return json.choices[0]?.message.content ?? "";
 }
@@ -156,6 +168,8 @@ async function ask(image: string, ocr: Config["ocr"], prompt: string) {
 /**
  * OCRs one registered file. Never throws for a bad file: the failure is stored on the row,
  * so a bulk run goes on. Pages already stored are kept, so a crashed run resumes mid-PDF.
+ * A setup problem (SetupError: Ollama down, model missing) is thrown instead, and the file
+ * goes back to waiting: it is not the file's fault.
  */
 export async function processFile(
   db: Database,
@@ -185,7 +199,14 @@ export async function processFile(
       if (!stored.has(i + 1)) {
         const path = join(dir, image);
         // Section marks are an extra: if that read fails, the page text is still kept.
-        const boxes = cfg.ocr.layoutPrompt ? parseBoxes(await ask(path, cfg.ocr, cfg.ocr.layoutPrompt).catch(() => "")) : [];
+        const boxes = cfg.ocr.layoutPrompt
+          ? parseBoxes(
+              await ask(path, cfg.ocr, cfg.ocr.layoutPrompt).catch((e) => {
+                if (e instanceof SetupError) throw e;
+                return "";
+              }),
+            )
+          : [];
         const text = cleanOcr(await ask(path, cfg.ocr, cfg.ocr.prompt));
         db.run("INSERT INTO pages (file_id, page, text, image, boxes) VALUES (?, ?, ?, ?, ?)", [
           id,
@@ -203,6 +224,10 @@ export async function processFile(
     await Bun.write(outPath, pages.map((p) => p.text).join("\n\n---\n\n") + "\n");
     db.run("UPDATE files SET status = 'done', out_path = ?, done_at = CURRENT_TIMESTAMP WHERE id = ?", [outPath, id]);
   } catch (e) {
+    if (e instanceof SetupError) {
+      db.run("UPDATE files SET status = 'queued' WHERE id = ?", [id]);
+      throw e;
+    }
     db.run("UPDATE files SET status = 'failed', error = ? WHERE id = ?", [e instanceof Error ? e.message : String(e), id]);
   }
   return get();

@@ -4,6 +4,10 @@ const root = resolve(import.meta.dir, "..");
 
 export const defaults = {
   port: 4477,
+  // The app answers only on this computer. To use it from a phone, see "From your phone" in the README:
+  // the safe way keeps host as it is and adds the computer's tailnet name to allowedHosts.
+  host: "127.0.0.1",
+  allowedHosts: [] as string[],
   dataDir: "data", // where the folders are kept; relative = inside the project
   pdfDpi: 150, // raise for small print, lower for speed
   ocr: {

@@ -20,7 +20,12 @@ const TICK = 2000;
 const IDLE_HEALTH = 30_000; // model servers can go down while nothing is being read
 
 export const useStatus = () =>
-  useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: (q) => (q.state.data?.waiting ? TICK : IDLE_HEALTH) });
+  useQuery({
+    queryKey: ["status"],
+    queryFn: api.status,
+    // While something is wrong it is checked often, so the warning goes away soon after the fix.
+    refetchInterval: (q) => (q.state.data?.waiting || q.state.data?.problems.length ? TICK : IDLE_HEALTH),
+  });
 export const useFolders = () =>
   useQuery({ queryKey: ["folders"], queryFn: api.folders, refetchInterval: (q) => (q.state.data?.folders.some((f) => f.active > 0) ? TICK : false) });
 export const useFiles = (folder: string) =>

@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { defaults } from "../src/config";
 import { openDb } from "../src/db";
 import { folderConfig, listFolders, removeFolder, renameFolder } from "../src/folders";
+import { fromAnswer, fromThrown, notReachable } from "../src/health";
 import { addPath, cleanOcr, deleteFile, parseBoxes, processFile, resetFiles } from "../src/pipeline";
 import { chunk, indexPending, search } from "../src/search";
 import { allowed, startServer } from "../src/server";
@@ -22,12 +23,14 @@ const pagesText = [
   "<|ref|>text<|/ref|><|det|>[[10, 10, 500, 60]]<|/det|>\nReturns accepted within thirty days.",
 ];
 let ocrCalls = 0;
+let modelMissing = false; // when true the stand-in answers as Ollama does for a model that was never pulled
 const words = (s: string) => s.toLowerCase().match(/[a-z]+/g) ?? [];
 const model = Bun.serve({
   port: 0,
   routes: {
     "/v1/chat/completions": {
       POST: async (req) => {
+        if (modelMissing) return Response.json({ error: { message: "model 'x' not found", type: "not_found_error" } }, { status: 404 });
         const body = (await req.json()) as any;
         const layout = body.messages[0].content[1].text.includes("grounding");
         const content = layout ? "title[[100, 50, 600, 90]]\n# Corner Cafe\n\ntable[[100, 120, 400, 300]]\n<table>rows</table>" : pagesText[ocrCalls++ % 2];
@@ -149,6 +152,51 @@ test("folder names that could leave the data directory are refused", () => {
   for (const bad of ["", "..", "../x", "a/b", ".hidden", "x".repeat(51)]) expect(() => folderConfig(cfg, bad)).toThrow();
 });
 
+test("setup problems are told apart from document problems, with the fix", () => {
+  const ollama = "http://127.0.0.1:11434/v1";
+  // Ollama's own answers
+  expect(fromAnswer("ocr", ollama, "deepseek", 404, `{"error":{"message":"model 'deepseek' not found","type":"not_found_error"}}`)).toMatchObject({
+    id: "ocr",
+    level: "error",
+    title: "The OCR model is not downloaded",
+    fix: "ollama pull deepseek",
+  });
+  expect(fromAnswer("search", ollama, "nomic-embed-text", 404, `{"error":{"message":"model 'nomic-embed-text' not found"}}`)?.fix).toBe("ollama pull nomic-embed-text");
+  expect(fromAnswer("ocr", ollama, "m", 500, `{"error":{"message":"unable to load model: /x/blob"}}`)?.title).toBe("Ollama could not load the OCR model");
+  expect(fromAnswer("ocr", ollama, "m", 400, `{"error":{"message":"image too large"}}`)).toBeNull(); // about the request: the file fails, not the setup
+  // Ollama not answering: running or not installed
+  expect(notReachable("ocr", ollama, true)).toMatchObject({ title: "Ollama is not running", fix: "ollama serve" });
+  expect(notReachable("ocr", ollama, false).title).toBe("Ollama is not installed");
+  expect(notReachable("ocr", "http://127.0.0.1:8080/v1").title).toBe("The OCR model server is not answering");
+  // a page that only took too long is not a setup problem
+  expect(fromThrown("ocr", ollama, Object.assign(new Error("slow"), { name: "TimeoutError" }))).toBeNull();
+  expect(fromThrown("ocr", "http://127.0.0.1:8080/v1", new TypeError("Unable to connect"))?.level).toBe("error");
+});
+
+test("while the setup is broken files wait instead of failing, and are read once it is fixed", async () => {
+  const dataDir = join(tmp, "data-paused");
+  const { server, idle, stop } = await startServer({ ...cfg, dataDir }, { retryMs: 40 });
+  const root = (p: string) => `http://127.0.0.1:${server.port}${p}`;
+  await fetch(root("/api/folders"), { method: "POST", body: JSON.stringify({ name: "Inbox" }) });
+  await Bun.write(join(tmp, "photo.png"), "not really a picture, the stand-in does not look");
+  modelMissing = true;
+  const form = new FormData();
+  form.append("files", Bun.file(join(tmp, "photo.png")), "photo.png");
+  await fetch(root("/api/folders/Inbox/files"), { method: "POST", body: form });
+  await Bun.sleep(200);
+  expect(((await (await fetch(root("/api/folders/Inbox/files"))).json()) as any).files[0]).toMatchObject({ status: "queued", error: null });
+  const during = (await (await fetch(root("/api/status"))).json()) as any;
+  expect(during).toMatchObject({ waiting: 1, paused: true });
+  expect(during.problems[0]).toMatchObject({ id: "ocr", level: "error" });
+  expect(during.problems.filter((p: any) => p.id === "ocr")).toHaveLength(1); // one line per problem
+
+  modelMissing = false;
+  await idle();
+  expect(((await (await fetch(root("/api/folders/Inbox/files"))).json()) as any).files[0].status).toBe("done");
+  expect(await (await fetch(root("/api/status"))).json()).toMatchObject({ waiting: 0, paused: false });
+  await stop();
+});
+
 test("a folder with files still being read cannot be renamed or deleted", async () => {
   const busyCfg = { ...cfg, dataDir: join(tmp, "data-busy") };
   const db = openDb(folderConfig(busyCfg, "Inbox").dataDir);
@@ -162,7 +210,7 @@ test("a folder with files still being read cannot be renamed or deleted", async 
 
 test("server: upload, list, read, search; folders are separate; refuses other hosts and other sites", async () => {
   const dataDir = join(tmp, "data-server");
-  const { server, idle } = await startServer({ ...cfg, dataDir });
+  const { server, idle, stop } = await startServer({ ...cfg, dataDir });
   const root = (p: string) => `http://127.0.0.1:${server.port}${p}`;
   const url = (p: string) => root("/api/folders/default" + p.replace(/^\/api/, ""));
   await samplePdf(tmp, "upload.pdf", ["only page"]);
@@ -240,12 +288,20 @@ test("server: upload, list, read, search; folders are separate; refuses other ho
   expect(existsSync(join(dataDir, "folders", "Bills 2026"))).toBe(false);
   expect(((await (await fetch(url("/api/files"))).json()) as any).files).toHaveLength(1);
   const st = (await (await fetch(root("/api/status"))).json()) as any;
-  expect(st).toMatchObject({ waiting: 0, ocr: { state: "warn" } });
+  // the stand-in does not list our models: said as a warning, and nothing is paused
+  expect(st).toMatchObject({ waiting: 0, paused: false, search: true });
+  expect(st.problems.map((p: any) => [p.id, p.level])).toEqual([["ocr", "warning"], ["search", "warning"]]);
 
   expect(allowed(new Request("http://127.0.0.1:4477/api/files"))).toBe(true);
   expect(allowed(new Request("http://evil.example:4477/api/files"))).toBe(false);
   expect(allowed(new Request("http://127.0.0.1:4477/api/folder", { method: "POST", headers: { origin: "https://evil.example" } }))).toBe(false);
   expect(allowed(new Request("http://127.0.0.1:4477/api/folder", { method: "POST", headers: { origin: "http://127.0.0.1:4477" } }))).toBe(true);
+  // From a phone through "tailscale serve": only when that name was allowed, and still not for other sites.
+  const phone = (origin: string) => new Request("http://mac.tail1234.ts.net/api/folders", { method: "POST", headers: { origin } });
+  expect(allowed(phone("https://mac.tail1234.ts.net"))).toBe(false);
+  expect(allowed(phone("https://mac.tail1234.ts.net"), ["mac.tail1234.ts.net"])).toBe(true);
+  expect(allowed(phone("https://evil.example"), ["mac.tail1234.ts.net"])).toBe(false);
+  expect(allowed(new Request("http://127.0.0.1:4477/api/folders", { method: "POST", headers: { origin: "null" } }), ["mac.tail1234.ts.net"])).toBe(false);
 
-  await server.stop(true);
+  await stop();
 });

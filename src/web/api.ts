@@ -13,8 +13,10 @@ export type Box = { type: string; box: [number, number, number, number]; text: s
 export type Page = { page: number; text: string; hasImage: boolean; boxes: Box[] };
 export type FileDetail = { file: Omit<FileInfo, "pages_done">; pages: Page[] };
 export type Hit = { file_id: number; name: string; page: number; text: string; score: number };
-export type Health = { state: "ok" | "warn" | "down"; detail: string };
-export type Status = { ocr: Health; search: Health | null; waiting: number };
+/** Something wrong with the setup (Ollama not running, model not downloaded, ...), with what to do about it. */
+export type Problem = { id: "ocr" | "search" | "pdf" | "index"; level: "error" | "warning"; title: string; detail: string; fix?: string };
+/** waiting: files not read yet. paused: a problem is holding them. search: whether search is turned on. */
+export type Status = { waiting: number; paused: boolean; search: boolean; problems: Problem[] };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch("/api" + path, init);

@@ -48,6 +48,7 @@ export function PageView({ folder, fileId, fileName, page, formatted, hidden }: 
                   key={i}
                   onMouseEnter={() => setHover(i)}
                   onMouseLeave={() => setHover(null)}
+                  onClick={() => setHover(hover === i ? null : i)} // touch screens have no hover
                   {...stylex.props(s.box)}
                   style={{ left: `${x1}%`, top: `${y1}%`, width: `${x2 - x1}%`, height: `${y2 - y1}%`, borderColor: ink, backgroundColor: ink + (hover === i ? "40" : "14") }}
                 >

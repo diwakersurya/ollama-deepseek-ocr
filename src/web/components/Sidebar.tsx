@@ -5,7 +5,7 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Folder, FolderOpen, FolderPlus, Pencil, ScanText, Trash2 } from "lucide-react";
-import type { FolderInfo, Health } from "../api";
+import type { FolderInfo, Problem } from "../api";
 import { useStatus } from "../queries";
 import { format } from "../route";
 import type { FolderDialog } from "./FolderDialogs";
@@ -35,12 +35,12 @@ function FolderItem({ folder, active, onDialog }: { folder: FolderInfo; active: 
   );
 }
 
-function ModelLine({ name, health }: { name: string; health: Health | null | undefined }) {
-  const text = !health ? `${name}: off` : health.state === "ok" ? `${name} ready` : health.state === "warn" ? `${name}: check the model` : `${name} not reachable`;
-  const variant = !health ? "neutral" : health.state === "ok" ? "success" : health.state === "warn" ? "warning" : "error";
+/** One line of the status area: ready, or the problem in its own words (details are in the banner and the tooltip). */
+function ModelLine({ ready, problem }: { ready: string; problem: Problem | undefined }) {
+  const text = problem?.title ?? ready;
   return (
     <HStack gap={2} align="center">
-      <StatusDot variant={variant} label={text} tooltip={health?.detail ?? "Turned off in config.json"} />
+      <StatusDot variant={!problem ? "success" : problem.level === "error" ? "error" : "warning"} label={text} tooltip={problem?.detail} />
       <Text size="sm" color="secondary">
         {text}
       </Text>
@@ -61,17 +61,28 @@ function SystemStatus({ serverDown }: { serverDown: boolean }) {
       </HStack>
     );
   if (!data) return null;
-  const queue = data.waiting ? `Reading, ${data.waiting} file${data.waiting === 1 ? "" : "s"} to go` : "Nothing waiting";
+  const files = `${data.waiting} file${data.waiting === 1 ? "" : "s"}`;
+  const queue = !data.waiting ? "Nothing waiting" : data.paused ? `Paused, ${files} waiting` : `Reading, ${files} to go`;
+  const problem = (...ids: Problem["id"][]) => data.problems.find((p) => ids.includes(p.id));
   return (
     <VStack gap={2} padding={3}>
       <HStack gap={2} align="center">
-        <StatusDot variant={data.waiting ? "accent" : "neutral"} label={queue} isPulsing={data.waiting > 0} />
+        <StatusDot variant={!data.waiting ? "neutral" : data.paused ? "warning" : "accent"} label={queue} isPulsing={data.waiting > 0 && !data.paused} />
         <Text size="sm" color="secondary">
           {queue}
         </Text>
       </HStack>
-      <ModelLine name="OCR model" health={data.ocr} />
-      <ModelLine name="Search model" health={data.search} />
+      <ModelLine ready="OCR model ready" problem={problem("ocr", "pdf")} />
+      {data.search ? (
+        <ModelLine ready="Search model ready" problem={problem("search", "index")} />
+      ) : (
+        <HStack gap={2} align="center">
+          <StatusDot variant="neutral" label="Search is off" tooltip="Turned off in config.json" />
+          <Text size="sm" color="secondary">
+            Search is off
+          </Text>
+        </HStack>
+      )}
     </VStack>
   );
 }

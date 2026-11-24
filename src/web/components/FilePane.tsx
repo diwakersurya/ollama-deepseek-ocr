@@ -18,7 +18,7 @@ import { format, go } from "../route";
 import { StatusIcon } from "./StatusIcon";
 
 const s = stylex.create({
-  pane: { position: "relative", display: "flex", flexDirection: "column", minHeight: 0, borderInlineEndWidth: 1, borderInlineEndStyle: "solid", borderInlineEndColor: colorVars["--color-border"] },
+  pane: { position: "relative", display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, borderInlineEndWidth: 1, borderInlineEndStyle: "solid", borderInlineEndColor: colorVars["--color-border"] },
   head: { paddingInline: spacingVars["--spacing-4"], paddingBlock: spacingVars["--spacing-3"], flexShrink: 0 },
   search: { paddingInline: spacingVars["--spacing-4"], paddingBlockEnd: spacingVars["--spacing-3"], flexShrink: 0 },
   list: { listStyleType: "none", margin: 0, paddingBlock: 0, paddingInline: spacingVars["--spacing-2"], overflowY: "auto", flexGrow: 1, display: "flex", flexDirection: "column", gap: spacingVars["--spacing-0-5"] },
@@ -99,7 +99,7 @@ function ImportDialog({ folder, onClose }: { folder: string; onClose: () => void
         {/* DialogHeader insets its title; the body takes the same inset so the two line up. */}
         <VStack gap={4} paddingInline={4} paddingBlockEnd={4}>
           <TextInput
-            label="Path on this machine"
+            label="Path on the computer that runs Bulk OCR"
             value={path}
             onChange={setPath}
             placeholder="/Users/you/Documents/scans"
@@ -192,7 +192,7 @@ export function FilePane({ folder, files, openId, q, searchEnabled }: Props) {
         <Heading level={1} maxLines={1} hasTruncateTooltip xstyle={s.name}>
           {folder.name}
         </Heading>
-        <IconButton label="Add a directory from this machine" tooltip="Add a directory from this machine" icon={<FolderInput size={16} />} variant="ghost" onClick={() => setImporting(true)} />
+        <IconButton label="Add a directory from the computer" tooltip="Add a directory from the computer that runs Bulk OCR" icon={<FolderInput size={16} />} variant="ghost" onClick={() => setImporting(true)} />
         <Button label="Add files" icon={<Upload size={15} />} variant="primary" isLoading={upload.isPending} onClick={() => picker.current?.click()} />
         <input
           ref={picker}

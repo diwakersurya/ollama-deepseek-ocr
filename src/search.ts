@@ -2,6 +2,7 @@
 // Reads what pipeline.ts stored; pipeline.ts never calls this file.
 import type { Database } from "bun:sqlite";
 import type { Config } from "./config";
+import { SetupError, answered, fromAnswer, fromThrown } from "./health";
 
 type SearchCfg = Config["search"];
 
@@ -27,9 +28,17 @@ async function embed(cfg: SearchCfg, input: string[]) {
   const res = await fetch(`${cfg.baseUrl}/embeddings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(120_000),
     body: JSON.stringify({ model: cfg.model, input }),
+  }).catch((e) => {
+    const problem = fromThrown("search", cfg.baseUrl, e);
+    throw problem ? new SetupError(problem) : new Error("The search model did not answer in 2 minutes.");
   });
-  if (!res.ok) throw new Error(`embedding server ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) {
+    const body = await res.text();
+    const problem = fromAnswer("search", cfg.baseUrl, cfg.model, res.status, body);
+    throw problem ? new SetupError(problem) : new Error(answered("search", res.status, body));
+  }
   const json = (await res.json()) as { data: { embedding: number[] }[] };
   return json.data.map(({ embedding }) => {
     const v = Float32Array.from(embedding);

@@ -13,7 +13,8 @@ import { useEffect, useState } from "react";
 import type { FileInfo, Page } from "../api";
 import { useFile } from "../queries";
 import { SECTION, type SectionKind, kindOf } from "../sections";
-import { toast } from "../toast";
+import { copyText } from "../clipboard";
+import { BackToFiles } from "./BackToFiles";
 import { PageView } from "./PageView";
 import { StatusIcon, statusText } from "./StatusIcon";
 
@@ -75,7 +76,10 @@ export function Viewer({ folder, id, page, info }: Props) {
     if (loaded && page) document.getElementById(`page-${page}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [loaded, page, id]);
 
-  if (isError) return <EmptyState icon={<FileX size={32} />} title="This file is not in the folder" description="It may have been deleted. Pick another file from the list." />;
+  if (isError)
+    return (
+      <EmptyState icon={<FileX size={32} />} title="This file is not in the folder" description="It may have been deleted. Pick another file from the list." actions={<BackToFiles folder={folder} />} />
+    );
   if (isPending)
     return (
       <div {...stylex.props(s.wrap)}>
@@ -95,6 +99,7 @@ export function Viewer({ folder, id, page, info }: Props) {
     <div {...stylex.props(s.wrap)}>
       <HStack gap={3} align="center" wrap="wrap" xstyle={s.head}>
         <HStack gap={2} align="center" xstyle={s.title}>
+          <BackToFiles folder={folder} />
           <StatusIcon file={live} />
           <Heading level={2} maxLines={1} hasTruncateTooltip>
             {file.name}
@@ -109,10 +114,7 @@ export function Viewer({ folder, id, page, info }: Props) {
           icon={<Copy size={14} />}
           variant="secondary"
           isDisabled={!pages.length}
-          onClick={async () => {
-            await navigator.clipboard.writeText(allText(pages));
-            toast.ok("Text copied");
-          }}
+          onClick={() => copyText(allText(pages), "Text copied")}
         />
         <Button label="Download .md" icon={<Download size={14} />} variant="secondary" isDisabled={!pages.length} onClick={() => download(file.name, allText(pages))} />
       </HStack>

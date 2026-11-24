@@ -26,6 +26,7 @@ Run these in the project directory.
 ```bash
 bun install                               # once
 bun run serve                             # web app on http://127.0.0.1:4477
+bun run serve --tailnet                   # the same, and reachable from your phone over Tailscale (see below)
 bun run ocr ./scans ./one.pdf             # OCR directories (recursive) and files, then index them for search
 bun run ocr -f Receipts ./scans           # same, into the folder "Receipts" (created if new)
 bun run search -f Receipts "taxi"         # search only that folder
@@ -50,6 +51,43 @@ bun run config                            # print the settings in use
 - Lists update by themselves every 2 seconds while files are being read, and stop asking once all are finished.
   Files added from the terminal while the app is idle show up when you return to the tab or reload.
 - The address remembers where you are (`#/Receipts/file/12`), so reload, back and shared links work.
+
+### From your phone
+
+The app answers only on the computer it runs on. To use it from a phone, put the phone and the computer on your
+[Tailscale](https://tailscale.com) tailnet and let Tailscale pass the page on:
+
+1. Start the app with `bun run serve --tailnet`. It prints the address for the phone, `https://<computer>.<tailnet>.ts.net/`,
+   and the two Tailscale commands below with the right path.
+2. Once: `tailscale serve --bg 4477`. To stop sharing: `tailscale serve reset`.
+3. Open the address on the phone.
+
+On a phone the file list and the open file take turns, with a back arrow between them; the folders are behind the menu
+button. **Add files** offers the camera, so a receipt can be photographed and read in one step.
+
+Why this way: the app still listens only on the computer itself, so nobody on the same Wi-Fi can reach it; only devices
+on your tailnet can; and the page is https, which browsers require before they let a page copy text.
+There is no sign-in: every device on your tailnet can read and delete the documents.
+
+Other setups: list the names the app should answer to in `allowedHosts`. Setting `host` to `0.0.0.0` opens the
+app to everyone on the network it is connected to; avoid it.
+
+### When something is not set up
+
+The app says what is wrong and how to fix it, in a banner at the top and at the bottom of the folder list; the script
+prints the same and stops before touching any file.
+
+| It says | Meaning | Fix |
+|---|---|---|
+| Ollama is not installed | No Ollama on this computer | Install it from ollama.com, or `brew install ollama` |
+| Ollama is not running | Installed, but not started | Open the Ollama app, or `ollama serve` |
+| The OCR model is not downloaded | Ollama runs, the model is missing | `ollama pull <model>` (the exact command is shown) |
+| The search model is not downloaded | Same, for search | `ollama pull nomic-embed-text` |
+| Ollama could not load the OCR model | Ollama is older than the model needs | Update Ollama to 0.40 or newer |
+| Ghostscript is not installed | PDFs cannot be turned into pages (images still work) | `brew install ghostscript` |
+
+While a model is missing or Ollama is down, files are **not** marked as failed. They wait, the queue shows as paused,
+and reading starts by itself within seconds of the fix. A file fails only for a reason of its own, such as a damaged PDF.
 
 ### What delete removes
 
@@ -86,6 +124,8 @@ Defaults are in `src/config.ts`. To change any, create `config.json` in the proj
 | Key | Default | Meaning |
 |---|---|---|
 | `port` | `4477` | Web app port |
+| `host` | `127.0.0.1` | Address the app listens on. Leave it; see *From your phone* |
+| `allowedHosts` | `[]` | Other names the app answers to, such as the computer's tailnet name. `--tailnet` adds that one for you |
 | `dataDir` | `data` | Where the folders are kept |
 | `pdfDpi` | `150` | PDF page image resolution. Raise for small print |
 | `ocr.baseUrl` | `http://127.0.0.1:11434/v1` | OpenAI-compatible server that runs the OCR model |
@@ -121,6 +161,7 @@ src/
   pipeline.ts     file -> page images (gs / sips) -> OCR model (text, then section boxes) -> SQLite + markdown;
                   delete a file, read a file again                                   (shared by CLI and server)
   folders.ts      where a folder lives; list, rename, delete
+  health.ts       setup problems (Ollama down, model missing, ...) told apart from document problems, with the fix
   search.ts       chunk + embed + search; reads what pipeline stored, pipeline never calls it
   server.ts       web API + one-at-a-time queue
   cli.ts          commands
@@ -148,7 +189,7 @@ test/ocr.test.ts  the whole flow against a stand-in model server
 
 ## Security and privacy
 
-- The web app listens on `127.0.0.1` only, and its API refuses requests from other host names and other websites.
+- The web app listens on `127.0.0.1` only, and its API refuses requests addressed to any name it was not told about, and requests made by other websites.
 - Documents and text stay in `data/`; the only network calls go to the model servers you configure. Fonts and icons come with the installed packages and are served by the app, not fetched.
 - Folder names are limited to letters, digits, spaces, `-` and `_`, so a name can never point outside `data/`.
 - Delete only ever removes files inside the folder's own directory.
