@@ -11,6 +11,7 @@ Bulk OCR for PDFs, scans, photos and receipts with a local DeepSeek OCR model. N
   page images and search; nothing is shared between folders. Create, rename and delete them in the app.
 - **Search** (separate feature, can be turned off): the OCR'd text is embedded and searched by meaning, per folder.
 - Runs two ways on the same code: a **web app** and a **script** you point at a directory.
+- **One computer reads, your other devices use it**: open the app from a phone, tablet or another laptop over Tailscale.
 
 ## Requirements
 
@@ -26,7 +27,7 @@ Run these in the project directory.
 ```bash
 bun install                               # once
 bun run serve                             # web app on http://127.0.0.1:4477
-bun run serve --tailnet                   # the same, and reachable from your phone over Tailscale (see below)
+bun run serve --tailnet                   # the same, and reachable from your other devices over Tailscale (see below)
 bun run ocr ./scans ./one.pdf             # OCR directories (recursive) and files, then index them for search
 bun run ocr -f Receipts ./scans           # same, into the folder "Receipts" (created if new)
 bun run search -f Receipts "taxi"         # search only that folder
@@ -52,25 +53,82 @@ bun run config                            # print the settings in use
   Files added from the terminal while the app is idle show up when you return to the tab or reload.
 - The address remembers where you are (`#/Receipts/file/12`), so reload, back and shared links work.
 
-### From your phone
+### One computer reads, your other devices use it (Tailscale)
 
-The app answers only on the computer it runs on. To use it from a phone, put the phone and the computer on your
-[Tailscale](https://tailscale.com) tailnet and let Tailscale pass the page on:
+The reading needs a computer with the model on it. The rest (adding files, looking at pages, searching) can be done from
+any of your devices: a phone, a tablet, another laptop. The computer keeps doing the work and holding the documents; the
+other device is only the screen. [Tailscale](https://tailscale.com) connects them privately, wherever they are.
 
-1. Start the app with `bun run serve --tailnet`. It prints the address for the phone, `https://<computer>.<tailnet>.ts.net/`,
-   and the two Tailscale commands below with the right path.
-2. Once: `tailscale serve --bg 4477`. To stop sharing: `tailscale serve reset`.
-3. Open the address on the phone.
+**Set up, once**
 
-On a phone the file list and the open file take turns, with a back arrow between them; the folders are behind the menu
-button. **Add files** offers the camera, so a receipt can be photographed and read in one step.
+1. Install Tailscale on the computer that runs the app and on each other device, and sign in to the **same account** on all of them.
+2. On the computer, start the app with:
+   ```bash
+   bun run serve --tailnet
+   ```
+   It prints the address for your other devices, `https://<computer>.<tailnet>.ts.net/`, and the Tailscale command for the next step.
+3. On the computer, turn the link on:
+   ```bash
+   tailscale serve --bg 4477
+   ```
+   - On a Mac with Tailscale from the App Store the command is not on the PATH. Use the full path that step 2 printed:
+     `/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 4477`.
+   - The first time, Tailscale answers "Serve is not enabled on your tailnet" with a link. Open it, sign in and enable it;
+     the waiting command then finishes by itself.
+4. On the other device, switch Tailscale on and open the address from step 2.
 
-Why this way: the app still listens only on the computer itself, so nobody on the same Wi-Fi can reach it; only devices
-on your tailnet can; and the page is https, which browsers require before they let a page copy text.
-There is no sign-in: every device on your tailnet can read and delete the documents.
+**Every day after that**
 
-Other setups: list the names the app should answer to in `allowedHosts`. Setting `host` to `0.0.0.0` opens the
-app to everyone on the network it is connected to; avoid it.
+- On the computer: `bun run serve --tailnet`, with Ollama running and the computer awake. The link from step 3 stays on.
+- On the other device: Tailscale on, open the address. On an iPhone or iPad, Safari's share button has
+  **Add to Home Screen**, which gives it an icon like an app.
+- On the computer itself keep using `http://127.0.0.1:4477`. Its own tailnet address is for the other devices; opening it
+  from the same computer failed with a certificate error when this was tried.
+
+**What it is like on a phone**
+
+- The file list and the open file take turns, with a back arrow between them; the folders are behind the menu button.
+- **Add files** offers the camera, so a receipt can be photographed and read in one step. The photo is read on the computer.
+- Tap a box on a page to see what kind of section it is.
+
+**A nicer or different name**
+
+- Rename the computer in Tailscale (admin console, Machines, *Edit machine name*) to choose the first part of the address.
+  The tailnet part can be changed too (admin console, DNS, *Rename tailnet*); that changes the address of every device on it.
+- After either rename the old address stops working. Do both of these again so the new name is used:
+  ```bash
+  tailscale serve reset && tailscale serve --bg 4477   # the link remembers the name it was made with
+  bun run serve --tailnet                              # the app reads the name when it starts
+  ```
+
+**Turn it off**
+
+```bash
+tailscale serve reset
+```
+and start the app with plain `bun run serve`; it then answers only on the computer itself again.
+
+**How safe this is**
+
+- The app still listens only on the computer itself. Tailscale brings requests to it, so nobody on the same Wi-Fi or on
+  the internet can reach it; only devices signed in to your tailnet can.
+- The app answers to the tailnet name only when started with `--tailnet` (or when the name is listed in `allowedHosts`),
+  and still refuses requests made by other websites.
+- The address is https, which browsers require before they let a page copy text.
+- **There is no sign-in in the app.** Every device on your tailnet can read and delete the documents. On a tailnet you
+  share with other people, such as one from work, that includes their devices.
+
+**If it does not load**
+
+| On the other device | Likely reason | Do this |
+|---|---|---|
+| Cannot find the server | Tailscale is off on that device, or it is on another account | Switch it on; check the account |
+| Certificate or secure connection error | The link was made before a rename, or HTTPS is not enabled for the tailnet | `tailscale serve reset`, then `tailscale serve --bg 4477`; in the admin console under DNS, enable HTTPS Certificates |
+| A page that says "forbidden" | The app was started without `--tailnet`, or before a rename | Restart it with `bun run serve --tailnet` |
+| Nothing answers | The computer is asleep, or the app is not running | Wake it; start the app |
+
+Without Tailscale: list the names the app should answer to in `allowedHosts` and put your own secure tunnel in front of it.
+Setting `host` to `0.0.0.0` opens the app to everyone on the network it is connected to; avoid it.
 
 ### When something is not set up
 
@@ -124,7 +182,7 @@ Defaults are in `src/config.ts`. To change any, create `config.json` in the proj
 | Key | Default | Meaning |
 |---|---|---|
 | `port` | `4477` | Web app port |
-| `host` | `127.0.0.1` | Address the app listens on. Leave it; see *From your phone* |
+| `host` | `127.0.0.1` | Address the app listens on. Leave it; see *One computer reads, your other devices use it* |
 | `allowedHosts` | `[]` | Other names the app answers to, such as the computer's tailnet name. `--tailnet` adds that one for you |
 | `dataDir` | `data` | Where the folders are kept |
 | `pdfDpi` | `150` | PDF page image resolution. Raise for small print |
