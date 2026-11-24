@@ -45,6 +45,8 @@ bun run config                            # print the settings in use
   row can be read again or deleted. Search covers the open folder; `/` jumps to the search box.
 - **Page** (right): the page image with the marked sections beside the text. The chips above it show or hide a
   kind of section.
+- Lists update by themselves every 2 seconds while files are being read, and stop asking once all are finished.
+  Files added from the terminal while the app is idle show up when you return to the tab or reload.
 - The address remembers where you are (`#/Receipts/file/12`), so reload, back and shared links work.
 
 ### What delete removes
@@ -123,17 +125,21 @@ src/
   db.ts           SQLite schema (one database per folder)
   config.ts       defaults + config.json
   shared/         rules used by both the server and the web app (folder names)
-  web/            the web app: React 19, StyleX, TanStack Query
+  web/            the web app: React 19, Astryx design system, StyleX, TanStack Query
     api.ts          every HTTP call
     queries.ts      every read and change (cache, refresh, error toasts)
     route.ts        the address (#/folder/file/12), checked before use
-    tokens.stylex.ts  colours, spacing, type
     components/     Sidebar, FilePane, Viewer, PageView, dialogs, ...
 test/ocr.test.ts  the whole flow against a stand-in model server
 ```
 
 - No build step: Bun bundles `src/web/index.html` when the server starts serving it. `bun run dev` reloads as the code changes.
-- StyleX is compiled by `stylex.plugin.ts` (wired in `bunfig.toml`), which is why commands are run in the project directory.
+- The interface is built from [Astryx](https://astryx.atmeta.com) components (`@astryxdesign/core`) with its neutral theme, as shipped:
+  light or dark follows the system setting. The few parts Astryx has no component for (the file rows, the page image with
+  its section boxes) are styled with Astryx tokens, so they follow the theme too.
+- Astryx is in beta and a theme works only with the Core release it names, so both are pinned to one exact version.
+  Upgrade them together: `bun add -E @astryxdesign/core@latest @astryxdesign/theme-neutral@latest`.
+- Our own StyleX is compiled by `stylex.plugin.ts` (wired in `bunfig.toml`), which is why commands are run in the project directory.
 - `bun test` and `bun run typecheck` check the code.
 - Search compares the query with every stored piece of text. That is fast to roughly 100k pieces per folder; past that,
   replace `search.ts` with sqlite-vec or LanceDB.
@@ -141,7 +147,7 @@ test/ocr.test.ts  the whole flow against a stand-in model server
 ## Security and privacy
 
 - The web app listens on `127.0.0.1` only, and its API refuses requests from other host names and other websites.
-- Documents and text stay in `data/`; the only network calls go to the model servers you configure. Fonts and icons are bundled, not fetched.
+- Documents and text stay in `data/`; the only network calls go to the model servers you configure. Fonts and icons come with the installed packages and are served by the app, not fetched.
 - Folder names are limited to letters, digits, spaces, `-` and `_`, so a name can never point outside `data/`.
 - Delete only ever removes files inside the folder's own directory.
 - Ghostscript runs with `-dSAFER`, so a PDF cannot read or write other files.

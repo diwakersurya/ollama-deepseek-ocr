@@ -1,53 +1,53 @@
+import { AppShell } from "@astryxdesign/core/AppShell";
+import { Button } from "@astryxdesign/core/Button";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
 import * as stylex from "@stylexjs/stylex";
 import { FolderPlus, FolderX, MousePointerClick, Unplug } from "lucide-react";
 import { useState } from "react";
 import type { FolderInfo } from "./api";
-import { EmptyState } from "./components/EmptyState";
 import { FilePane } from "./components/FilePane";
 import { type FolderDialog, FolderDialogs } from "./components/FolderDialogs";
 import { SearchResults } from "./components/SearchResults";
 import { Sidebar } from "./components/Sidebar";
-import { Toasts } from "./components/Toasts";
+import { ToastBridge } from "./components/ToastBridge";
 import { Viewer } from "./components/Viewer";
-import { Button } from "./components/ui";
 import { useFiles, useFolders } from "./queries";
 import { type Route, go, useRoute } from "./route";
-import { color } from "./tokens.stylex";
 
 const NARROW = "@media (max-width: 900px)";
 
 const s = stylex.create({
-  shell: {
-    display: "grid",
-    gridTemplateColumns: { default: "240px 340px minmax(0, 1fr)", [NARROW]: "minmax(0, 1fr)" },
-    height: { default: "100%", [NARROW]: "auto" },
-    minHeight: "100%",
-    backgroundColor: color.surface,
-  },
+  // Files on the left, the open file or the search results on the right.
+  work: { display: "grid", gridTemplateColumns: { default: "340px minmax(0, 1fr)", [NARROW]: "minmax(0, 1fr)" }, height: { default: "100%", [NARROW]: "auto" }, minHeight: 0 },
   main: { minWidth: 0, minHeight: 0, overflow: { default: "hidden", [NARROW]: "visible" } },
-  wide: { gridColumn: { default: "2 / -1", [NARROW]: "auto" } },
+  centre: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: 320 },
 });
 
-/** One folder: its files on the left, and on the right the open file or the search results. */
 function Workspace({ folder, route, searchEnabled }: { folder: FolderInfo; route: Route; searchEnabled: boolean }) {
   const files = useFiles(folder.name).data?.files;
   return (
-    <>
+    <div {...stylex.props(s.work)}>
       <FilePane folder={folder} files={files} openId={route.fileId} q={route.q} searchEnabled={searchEnabled} />
-      <main {...stylex.props(s.main)}>
+      <div {...stylex.props(s.main)}>
         {route.fileId ? (
           <Viewer key={route.fileId} folder={folder.name} id={route.fileId} page={route.page} info={files?.find((f) => f.id === route.fileId)} />
         ) : route.q ? (
           <SearchResults folder={folder.name} q={route.q} />
         ) : (
-          <EmptyState icon={<MousePointerClick size={32} />} title={files?.length === 0 ? "Add the first documents" : "Pick a file to see what was read"}>
-            {files?.length === 0
-              ? "Drop PDFs, scans or photos on the list. Each page is read on this machine and nothing is sent anywhere."
-              : "You get each page with the sections that were read marked on it, beside the text."}
-          </EmptyState>
+          <div {...stylex.props(s.centre)}>
+            <EmptyState
+              icon={<MousePointerClick size={32} />}
+              title={files?.length === 0 ? "Add the first documents" : "Pick a file to see what was read"}
+              description={
+                files?.length === 0
+                  ? "Drop PDFs, scans or photos on the list. Each page is read on this machine and nothing is sent anywhere."
+                  : "You get each page with the sections that were read marked on it, beside the text."
+              }
+            />
+          </div>
         )}
-      </main>
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -58,36 +58,29 @@ export function App() {
   const folders = data?.folders ?? [];
   // No folder in the address: show the first one.
   const current = route.folder ? folders.find((f) => f.name === route.folder) : folders[0];
-  const newFolder = (
-    <Button variant="primary" onClick={() => setDialog({ kind: "new" })}>
-      <FolderPlus size={15} />
-      New folder
-    </Button>
-  );
+  const newFolder = <Button label="New folder" icon={<FolderPlus size={15} />} variant="primary" onClick={() => setDialog({ kind: "new" })} />;
   return (
-    <div {...stylex.props(s.shell)}>
-      <Sidebar folders={folders} current={current?.name ?? null} loaded={!isPending} serverDown={isError} onDialog={setDialog} />
+    <AppShell height="fill" contentPadding={0} sideNav={<Sidebar folders={folders} current={current?.name ?? null} loaded={!isPending} serverDown={isError} onDialog={setDialog} />}>
       {current ? (
         <Workspace key={current.name} folder={current} route={route} searchEnabled={data?.searchEnabled ?? false} />
-      ) : (
-        <main {...stylex.props(s.main, s.wide)}>
-          {isPending ? null : isError && !data ? (
-            <EmptyState icon={<Unplug size={32} />} title="The app is not answering">
-              Start it in the project directory with: bun run serve. This page reconnects by itself.
-            </EmptyState>
+      ) : isPending ? null : (
+        <div {...stylex.props(s.centre)}>
+          {isError && !data ? (
+            <EmptyState icon={<Unplug size={32} />} title="The app is not answering" description="Start it in the project directory with: bun run serve. This page reconnects by itself." />
           ) : route.folder ? (
-            <EmptyState icon={<FolderX size={32} />} title={`There is no folder named “${route.folder}”`} action={folders[0] ? <Button onClick={() => go({ folder: folders[0]!.name })}>Open {folders[0].name}</Button> : newFolder}>
-              It may have been renamed or deleted.
-            </EmptyState>
+            <EmptyState
+              icon={<FolderX size={32} />}
+              title={`There is no folder named “${route.folder}”`}
+              description="It may have been renamed or deleted."
+              actions={folders[0] ? <Button label={`Open ${folders[0].name}`} variant="secondary" onClick={() => go({ folder: folders[0]!.name })} /> : newFolder}
+            />
           ) : (
-            <EmptyState icon={<FolderPlus size={32} />} title="Create your first folder" action={newFolder}>
-              A folder holds one kind of document, such as receipts or contracts. Each folder has its own files and its own search.
-            </EmptyState>
+            <EmptyState icon={<FolderPlus size={32} />} title="Create your first folder" description="A folder holds one kind of document, such as receipts or contracts. Each folder has its own files and its own search." actions={newFolder} />
           )}
-        </main>
+        </div>
       )}
       <FolderDialogs dialog={dialog} folders={folders} current={current?.name ?? null} onClose={() => setDialog(null)} />
-      <Toasts />
-    </div>
+      <ToastBridge />
+    </AppShell>
   );
 }

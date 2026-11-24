@@ -1,73 +1,83 @@
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Heading } from "@astryxdesign/core/Heading";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
+import { colorVars, radiusVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { FolderInput, RotateCw, Search, Trash2, Upload, X } from "lucide-react";
+import { FolderInput, RotateCw, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import type { FileInfo, FolderInfo } from "../api";
 import { useDeleteFile, useImportPath, useRedoFile, useUpload } from "../queries";
 import { format, go } from "../route";
-import { color, radius, space } from "../tokens.stylex";
-import { ConfirmDialog, Dialog, DialogActions } from "./Dialog";
 import { StatusIcon } from "./StatusIcon";
-import { Button, IconButton, TextField } from "./ui";
-
-const pulse = stylex.keyframes({ "50%": { opacity: 0.5 } });
 
 const s = stylex.create({
-  pane: { position: "relative", display: "flex", flexDirection: "column", minHeight: 0, borderInlineEndWidth: 1, borderInlineEndStyle: "solid", borderInlineEndColor: color.line },
-  head: { display: "flex", alignItems: "center", gap: space.x2, height: 56, paddingInline: space.x4, flexShrink: 0 },
-  title: { flexGrow: 1, minWidth: 0, fontSize: 16, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  search: { position: "relative", display: "flex", alignItems: "center", marginInline: space.x4, marginBlockEnd: space.x3, flexShrink: 0 },
-  searchIcon: { position: "absolute", insetInlineStart: 10, color: color.faint, display: "inline-flex", pointerEvents: "none" },
-  searchInput: {
-    width: "100%",
-    height: 36,
-    paddingInlineStart: 34,
-    paddingInlineEnd: 34,
-    backgroundColor: color.raised,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.line, ":focus": color.accent },
-    borderRadius: radius.m,
-    outlineStyle: "none",
-    opacity: { default: 1, ":disabled": 0.4 },
-    "::placeholder": { color: color.faint },
+  pane: { position: "relative", display: "flex", flexDirection: "column", minHeight: 0, borderInlineEndWidth: 1, borderInlineEndStyle: "solid", borderInlineEndColor: colorVars["--color-border"] },
+  head: { paddingInline: spacingVars["--spacing-4"], paddingBlock: spacingVars["--spacing-3"], flexShrink: 0 },
+  search: { paddingInline: spacingVars["--spacing-4"], paddingBlockEnd: spacingVars["--spacing-3"], flexShrink: 0 },
+  list: { listStyleType: "none", margin: 0, paddingBlock: 0, paddingInline: spacingVars["--spacing-2"], overflowY: "auto", flexGrow: 1, display: "flex", flexDirection: "column", gap: spacingVars["--spacing-0-5"] },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacingVars["--spacing-0-5"],
+    borderRadius: radiusVars["--radius-element"],
+    paddingInlineEnd: spacingVars["--spacing-1"],
+    backgroundColor: { default: "transparent", ":hover": { "@media (hover: hover)": colorVars["--color-overlay-hover"] } },
   },
-  clear: { position: "absolute", insetInlineEnd: 4 },
-  list: { listStyleType: "none", margin: 0, paddingBlock: 0, paddingInline: space.x2, overflowY: "auto", flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 },
-  row: { display: "flex", alignItems: "center", borderRadius: radius.m, paddingInlineEnd: space.x1, backgroundColor: { default: "transparent", ":hover": color.raised }, transitionProperty: "background-color", transitionDuration: "120ms" },
-  rowActive: { backgroundColor: { default: color.raised2, ":hover": color.raised2 } },
-  link: { display: "flex", alignItems: "center", gap: space.x2, flexGrow: 1, minWidth: 0, minHeight: 40, paddingBlock: space.x1, paddingInlineStart: space.x2, color: color.text, textDecoration: "none", borderRadius: radius.m, outlineWidth: { default: 0, ":focus-visible": 2 }, outlineStyle: "solid", outlineColor: color.accent, outlineOffset: -2 },
-  name: { flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  meta: { fontSize: 12, color: color.faint, fontVariantNumeric: "tabular-nums", flexShrink: 0, paddingInline: space.x1 },
-  skeleton: { height: 40, borderRadius: radius.m, backgroundColor: color.raised, animationName: pulse, animationDuration: "1.4s", animationIterationCount: "infinite", "@media (prefers-reduced-motion: reduce)": { animationDuration: "0s" } },
-  empty: { paddingBlock: space.x4, paddingInline: space.x2, color: color.muted, display: "flex", flexDirection: "column", gap: space.x2 },
-  hint: { fontSize: 12, color: color.faint },
-  drop: { position: "absolute", inset: space.x2, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: space.x5, borderWidth: 2, borderStyle: "dashed", borderColor: color.accent, borderRadius: radius.l, backgroundColor: "rgb(18 18 18 / 0.88)", color: color.accent, fontWeight: 500, pointerEvents: "none" },
+  rowActive: { backgroundColor: { default: colorVars["--color-background-muted"], ":hover": colorVars["--color-background-muted"] } },
+  link: { display: "flex", alignItems: "center", gap: spacingVars["--spacing-2"], flexGrow: 1, minWidth: 0, minHeight: 40, paddingBlock: spacingVars["--spacing-1"], paddingInlineStart: spacingVars["--spacing-2"], color: "inherit", textDecoration: "none", borderRadius: radiusVars["--radius-element"] },
+  name: { flexGrow: 1, minWidth: 0 },
+  meta: { flexShrink: 0, whiteSpace: "nowrap" },
+  empty: { paddingBlock: spacingVars["--spacing-4"], paddingInline: spacingVars["--spacing-2"] },
+  drop: {
+    position: "absolute",
+    inset: spacingVars["--spacing-2"],
+    zIndex: 2,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: spacingVars["--spacing-6"],
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: colorVars["--color-accent"],
+    borderRadius: radiusVars["--radius-container"],
+    backgroundColor: colorVars["--color-background-surface"],
+    pointerEvents: "none",
+  },
 });
 
 function SearchBox({ folder, q, enabled }: { folder: string; q: string | null; enabled: boolean }) {
+  const [value, setValue] = useState(q ?? "");
   return (
-    <form
-      role="search"
-      {...stylex.props(s.search)}
-      title={enabled ? undefined : "Search is turned off in config.json"}
-      onSubmit={(e) => {
-        e.preventDefault();
-        const value = new FormData(e.currentTarget).get("q")?.toString().trim();
-        if (value) go({ folder, q: value });
-      }}
-    >
-      <span {...stylex.props(s.searchIcon)}>
-        <Search size={15} />
-      </span>
-      <input id="search" name="q" type="search" key={q ?? ""} defaultValue={q ?? ""} placeholder={`Search in ${folder}`} aria-label={`Search in ${folder}`} disabled={!enabled} required maxLength={200} autoComplete="off" {...stylex.props(s.searchInput)} />
-      {q && (
-        <span {...stylex.props(s.clear)}>
-          <IconButton label="Clear search" onClick={() => go({ folder })}>
-            <X size={14} />
-          </IconButton>
-        </span>
-      )}
-    </form>
+    <div {...stylex.props(s.search)}>
+      <TextInput
+        id="search"
+        type="search"
+        label={`Search in ${folder}`}
+        isLabelHidden
+        placeholder={`Search in ${folder}`}
+        startIcon="search"
+        hasClear
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          if (!next && q) go({ folder }); // cleared: back to the folder
+        }}
+        onEnter={() => {
+          if (value.trim()) go({ folder, q: value.trim() });
+        }}
+        isDisabled={!enabled}
+        disabledMessage="Search is turned off in config.json"
+        autoComplete="off"
+      />
+    </div>
   );
 }
 
@@ -75,20 +85,34 @@ function ImportDialog({ folder, onClose }: { folder: string; onClose: () => void
   const [path, setPath] = useState("");
   const add = useImportPath(folder);
   const ready = path.trim().length > 0 && !add.isPending;
+  const close = (open: boolean) => {
+    if (!open) onClose();
+  };
   return (
-    <Dialog title={`Add a directory to ${folder}`} onClose={onClose}>
+    <Dialog isOpen onOpenChange={close} purpose="form" width={480}>
+      <DialogHeader title={`Add a directory to ${folder}`} onOpenChange={close} />
       <form
         action={() => {
           if (ready) add.mutate(path.trim(), { onSuccess: onClose });
         }}
       >
-        <TextField label="Path on this machine" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/Documents/scans" autoFocus autoComplete="off" spellCheck={false} hint="Every PDF and image inside it is added, sub-directories too. The files stay where they are." />
-        <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={!ready}>
-            Add files
-          </Button>
-        </DialogActions>
+        {/* DialogHeader insets its title; the body takes the same inset so the two line up. */}
+        <VStack gap={4} paddingInline={4} paddingBlockEnd={4}>
+          <TextInput
+            label="Path on this machine"
+            value={path}
+            onChange={setPath}
+            placeholder="/Users/you/Documents/scans"
+            hasAutoFocus
+            autoComplete="off"
+            hasSpellCheck={false}
+            description="Every PDF and image inside it is added, sub-directories too. The files stay where they are."
+          />
+          <HStack justify="end" gap={2}>
+            <Button label="Cancel" variant="secondary" onClick={onClose} />
+            <Button label="Add files" type="submit" variant="primary" isDisabled={!ready} isLoading={add.isPending} />
+          </HStack>
+        </VStack>
       </form>
     </Dialog>
   );
@@ -104,22 +128,36 @@ function FileRow({ folder, file, open, openId }: { folder: string; file: FileInf
     <li {...stylex.props(s.row, open && s.rowActive)}>
       <a href={format({ folder, fileId: file.id })} aria-current={open ? "page" : undefined} {...stylex.props(s.link)}>
         <StatusIcon file={file} />
-        <span {...stylex.props(s.name)} title={file.name}>
+        <Text maxLines={1} hasTruncateTooltip xstyle={s.name}>
           {file.name}
-        </span>
-        <span {...stylex.props(s.meta)}>{meta}</span>
+        </Text>
+        <Text size="sm" color="secondary" hasTabularNumbers xstyle={s.meta}>
+          {meta}
+        </Text>
       </a>
-      <IconButton label={busy ? "Being read" : `Read ${file.name} again`} disabled={busy || redo.isPending} onClick={() => redo.mutate(file.id)}>
-        <RotateCw size={14} />
-      </IconButton>
-      <IconButton label={file.status === "processing" ? "Being read now. Delete it when it finishes." : `Delete ${file.name}`} danger disabled={file.status === "processing"} onClick={() => setConfirming(true)}>
-        <Trash2 size={14} />
-      </IconButton>
+      <IconButton label={`Read ${file.name} again`} tooltip={busy ? "Being read" : "Read again"} icon={<RotateCw size={14} />} variant="ghost" size="sm" isDisabled={busy || redo.isPending} onClick={() => redo.mutate(file.id)} />
+      <IconButton
+        label={`Delete ${file.name}`}
+        tooltip={file.status === "processing" ? "Being read now. Delete it when it finishes." : "Delete"}
+        icon={<Trash2 size={14} />}
+        variant="ghost"
+        size="sm"
+        isDisabled={file.status === "processing"}
+        onClick={() => setConfirming(true)}
+      />
       {confirming && (
-        <ConfirmDialog title={`Delete "${file.name}"?`} confirmLabel="Delete file" pending={remove.isPending} onConfirm={() => remove.mutate(file.id, { onSuccess: () => setConfirming(false) })} onClose={() => setConfirming(false)}>
-          <p>Its text, page images and search entries leave the app. If you uploaded it here, the uploaded copy is deleted too; a file added from a directory on this machine stays where it is.</p>
-          <p>This cannot be undone.</p>
-        </ConfirmDialog>
+        <AlertDialog
+          isOpen
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setConfirming(false);
+          }}
+          title={`Delete "${file.name}"?`}
+          description="Its text, page images and search entries leave the app. If you uploaded it here, the uploaded copy is deleted too; a file added from a directory on this machine stays where it is. This cannot be undone."
+          actionLabel="Delete file"
+          actionVariant="destructive"
+          isActionLoading={remove.isPending}
+          onAction={() => remove.mutate(file.id, { onSuccess: () => setConfirming(false) })}
+        />
       )}
     </li>
   );
@@ -150,17 +188,12 @@ export function FilePane({ folder, files, openId, q, searchEnabled }: Props) {
         upload.mutate([...e.dataTransfer.files]);
       }}
     >
-      <header {...stylex.props(s.head)}>
-        <h1 {...stylex.props(s.title)} title={folder.name}>
+      <HStack gap={2} align="center" xstyle={s.head}>
+        <Heading level={1} maxLines={1} hasTruncateTooltip xstyle={s.name}>
           {folder.name}
-        </h1>
-        <IconButton label="Add a directory from this machine" onClick={() => setImporting(true)}>
-          <FolderInput size={16} />
-        </IconButton>
-        <Button variant="primary" disabled={upload.isPending} onClick={() => picker.current?.click()}>
-          <Upload size={15} />
-          Add files
-        </Button>
+        </Heading>
+        <IconButton label="Add a directory from this machine" tooltip="Add a directory from this machine" icon={<FolderInput size={16} />} variant="ghost" onClick={() => setImporting(true)} />
+        <Button label="Add files" icon={<Upload size={15} />} variant="primary" isLoading={upload.isPending} onClick={() => picker.current?.click()} />
         <input
           ref={picker}
           type="file"
@@ -172,21 +205,36 @@ export function FilePane({ folder, files, openId, q, searchEnabled }: Props) {
             e.target.value = "";
           }}
         />
-      </header>
-      <SearchBox folder={folder.name} q={q} enabled={searchEnabled} />
+      </HStack>
+      <SearchBox key={q ?? ""} folder={folder.name} q={q} enabled={searchEnabled} />
       <ul {...stylex.props(s.list)}>
-        {!files && [0, 1, 2, 3].map((i) => <li key={i} {...stylex.props(s.skeleton)} />)}
+        {!files &&
+          [0, 1, 2, 3].map((i) => (
+            <li key={i}>
+              <Skeleton height={40} index={i} />
+            </li>
+          ))}
         {files?.map((f) => (
           <FileRow key={f.id} folder={folder.name} file={f} open={f.id === openId} openId={openId} />
         ))}
         {files?.length === 0 && (
           <li {...stylex.props(s.empty)}>
-            <span>This folder is empty.</span>
-            <span {...stylex.props(s.hint)}>Drop PDFs, scans or photos here, or use Add files. They are read one at a time on this machine.</span>
+            <VStack gap={1}>
+              <Text>This folder is empty.</Text>
+              <Text size="sm" color="secondary">
+                Drop PDFs, scans or photos here, or use Add files. They are read one at a time on this machine.
+              </Text>
+            </VStack>
           </li>
         )}
       </ul>
-      {dragging && <div {...stylex.props(s.drop)}>Drop to add to {folder.name}</div>}
+      {dragging && (
+        <div {...stylex.props(s.drop)}>
+          <Text weight="medium" color="accent">
+            Drop to add to {folder.name}
+          </Text>
+        </div>
+      )}
       {importing && <ImportDialog folder={folder.name} onClose={() => setImporting(false)} />}
     </section>
   );

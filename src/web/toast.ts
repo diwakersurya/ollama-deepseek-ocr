@@ -1,30 +1,20 @@
-import { useSyncExternalStore } from "react";
+// Results and errors are reported from places that are not components (the data layer, the address
+// check), while Astryx shows toasts through a hook. Messages are handed over here; ToastBridge shows them.
+export type Message = { kind: "ok" | "bad"; text: string };
 
-export type Toast = { id: number; kind: "ok" | "bad"; text: string };
-
-let toasts: Toast[] = [];
-let nextId = 1;
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
-
-function show(kind: Toast["kind"], text: string) {
-  const id = nextId++;
-  toasts = [...toasts.slice(-3), { id, kind, text }];
-  emit();
-  setTimeout(() => toast.dismiss(id), kind === "bad" ? 8000 : 4000);
-}
+let show: ((m: Message) => void) | null = null;
+const waiting: Message[] = [];
+const send = (m: Message) => (show ? show(m) : void waiting.push(m));
 
 export const toast = {
-  ok: (text: string) => show("ok", text),
-  bad: (text: string) => show("bad", text),
-  dismiss(id: number) {
-    toasts = toasts.filter((t) => t.id !== id);
-    emit();
+  ok: (text: string) => send({ kind: "ok", text }),
+  bad: (text: string) => send({ kind: "bad", text }),
+  /** Called once by ToastBridge; messages raised before the app was on screen are shown then. */
+  connect(fn: (m: Message) => void) {
+    show = fn;
+    waiting.splice(0).forEach(fn);
+    return () => {
+      show = null;
+    };
   },
 };
-
-export const useToasts = () =>
-  useSyncExternalStore(
-    (l) => (listeners.add(l), () => listeners.delete(l)),
-    () => toasts,
-  );

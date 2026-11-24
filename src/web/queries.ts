@@ -12,12 +12,23 @@ export const queryClient = new QueryClient({
 });
 
 const refresh = () => queryClient.invalidateQueries();
-const TICK = 2000; // ponytail: polling; local server, small answers
+// The server has no push channel, so progress is learned by asking again. That is done only while
+// something is being read: every 2 s then, and not at all once every file is finished.
+// When idle, lists refresh after each action and when the tab is looked at again.
+// ponytail: polling while busy; server-sent events would remove it, worth it only if this gets heavy.
+const TICK = 2000;
+const IDLE_HEALTH = 30_000; // model servers can go down while nothing is being read
 
-export const useStatus = () => useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
-export const useFolders = () => useQuery({ queryKey: ["folders"], queryFn: api.folders, refetchInterval: TICK });
+export const useStatus = () =>
+  useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: (q) => (q.state.data?.waiting ? TICK : IDLE_HEALTH) });
+export const useFolders = () =>
+  useQuery({ queryKey: ["folders"], queryFn: api.folders, refetchInterval: (q) => (q.state.data?.folders.some((f) => f.active > 0) ? TICK : false) });
 export const useFiles = (folder: string) =>
-  useQuery({ queryKey: ["files", folder], queryFn: () => api.files(folder), refetchInterval: TICK });
+  useQuery({
+    queryKey: ["files", folder],
+    queryFn: () => api.files(folder),
+    refetchInterval: (q) => (q.state.data?.files.some((f) => f.status === "queued" || f.status === "processing") ? TICK : false),
+  });
 /** Reloads while the file is still being read, so pages appear as they finish, and once more when its status changes. */
 export const useFile = (folder: string, id: number, status: FileStatus) =>
   useQuery({

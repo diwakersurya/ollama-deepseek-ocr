@@ -1,9 +1,13 @@
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack } from "@astryxdesign/core/HStack";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useState } from "react";
 import { folderName } from "../../shared/schema";
 import type { FolderInfo } from "../api";
 import { useCreateFolder, useDeleteFolder, useRenameFolder } from "../queries";
-import { ConfirmDialog, Dialog, DialogActions } from "./Dialog";
-import { Button, TextField } from "./ui";
 
 export type FolderDialog = { kind: "new" } | { kind: "rename"; folder: FolderInfo } | { kind: "delete"; folder: FolderInfo } | null;
 
@@ -13,13 +17,12 @@ type NameFormProps = {
   taken: string[];
   submitLabel: string;
   pending: boolean;
-  blocked?: string | null;
   onSubmit: (name: string) => void;
   onClose: () => void;
 };
 
 /** The one form for naming a folder, used to create and to rename. */
-function NameForm({ title, initial, taken, submitLabel, pending, blocked, onSubmit, onClose }: NameFormProps) {
+function NameForm({ title, initial, taken, submitLabel, pending, onSubmit, onClose }: NameFormProps) {
   const [value, setValue] = useState(initial);
   const parsed = folderName.safeParse(value);
   const name = parsed.success ? parsed.data : null;
@@ -32,31 +35,34 @@ function NameForm({ title, initial, taken, submitLabel, pending, blocked, onSubm
       : clash
         ? `A folder named "${name}" already exists`
         : null;
-  const ready = name !== null && !clash && name !== initial && !blocked && !pending;
+  const ready = name !== null && !clash && name !== initial && !pending;
+  const close = (open: boolean) => {
+    if (!open) onClose();
+  };
   return (
-    <Dialog title={title} onClose={onClose}>
+    <Dialog isOpen onOpenChange={close} purpose="form" width={440}>
+      <DialogHeader title={title} onOpenChange={close} />
       <form
         action={() => {
           if (ready) onSubmit(name);
         }}
       >
-        <TextField
-          label="Folder name"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          autoFocus
-          autoComplete="off"
-          maxLength={50}
-          error={error}
-          hint={blocked ?? "One folder per kind of document, for example Receipts or Contracts."}
-        />
-        <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={!ready}>
-            {submitLabel}
-          </Button>
-        </DialogActions>
+        {/* DialogHeader insets its title; the body takes the same inset so the two line up. */}
+        <VStack gap={4} paddingInline={4} paddingBlockEnd={4}>
+          <TextInput
+            label="Folder name"
+            value={value}
+            onChange={setValue}
+            hasAutoFocus
+            autoComplete="off"
+            description="One folder per kind of document, for example Receipts or Contracts."
+            status={error ? { type: "error", message: error } : undefined}
+          />
+          <HStack justify="end" gap={2}>
+            <Button label="Cancel" variant="secondary" onClick={onClose} />
+            <Button label={submitLabel} type="submit" variant="primary" isDisabled={!ready} isLoading={pending} />
+          </HStack>
+        </VStack>
       </form>
     </Dialog>
   );
@@ -73,34 +79,27 @@ export function FolderDialogs({ dialog, folders, current, onClose }: Props) {
   const done = { onSuccess: onClose };
 
   if (dialog.kind === "new")
-    return (
-      <NameForm title="New folder" initial="" taken={taken} submitLabel="Create folder" pending={create.isPending} onSubmit={(name) => create.mutate(name, done)} onClose={onClose} />
-    );
+    return <NameForm title="New folder" initial="" taken={taken} submitLabel="Create folder" pending={create.isPending} onSubmit={(name) => create.mutate(name, done)} onClose={onClose} />;
 
-  const { name, files, active } = dialog.folder;
-  const busy = active ? `${active} file${active === 1 ? " is" : "s are"} still being read. Try again when ${active === 1 ? "it finishes" : "they finish"}.` : null;
-
+  const { name, files } = dialog.folder;
   if (dialog.kind === "rename")
     return (
-      <NameForm
-        title={`Rename "${name}"`}
-        initial={name}
-        taken={taken}
-        submitLabel="Rename folder"
-        pending={rename.isPending}
-        blocked={busy}
-        onSubmit={(next) => rename.mutate({ folder: name, name: next }, done)}
-        onClose={onClose}
-      />
+      <NameForm title={`Rename "${name}"`} initial={name} taken={taken} submitLabel="Rename folder" pending={rename.isPending} onSubmit={(next) => rename.mutate({ folder: name, name: next }, done)} onClose={onClose} />
     );
 
+  const what = files === 0 ? "The folder is empty." : `Its ${files} file${files === 1 ? " leaves" : "s leave"} the app: text, page images, search index and uploaded copies.`;
   return (
-    <ConfirmDialog title={`Delete folder "${name}"?`} confirmLabel="Delete folder" pending={remove.isPending} blocked={busy} onConfirm={() => remove.mutate(name, done)} onClose={onClose}>
-      <p>
-        {files === 0 ? "The folder is empty." : `Its ${files} file${files === 1 ? "" : "s"} leave${files === 1 ? "s" : ""} the app: text, page images, search index and uploaded copies.`} Files added
-        from a directory on this machine stay where they are.
-      </p>
-      <p>This cannot be undone.</p>
-    </ConfirmDialog>
+    <AlertDialog
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`Delete folder "${name}"?`}
+      description={`${what} Files added from a directory on this machine stay where they are. This cannot be undone.`}
+      actionLabel="Delete folder"
+      actionVariant="destructive"
+      isActionLoading={remove.isPending}
+      onAction={() => remove.mutate(name, done)}
+    />
   );
 }
