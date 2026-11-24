@@ -1,0 +1,37 @@
+{
+  "name": "ollama-deepseek-ocr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "bun src/cli.ts serve",
+    "dev": "bun src/cli.ts serve --dev",
+    "ocr": "bun src/cli.ts ocr",
+    "redo": "bun src/cli.ts redo",
+    "index": "bun src/cli.ts index",
+    "search": "bun src/cli.ts search",
+    "folders": "bun src/cli.ts folders",
+    "config": "bun src/cli.ts config",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@stylexjs/stylex": "^0.19.2",
+    "@tanstack/react-query": "^5.108.4",
+    "lucide-react": "^1.79.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@stylexjs/unplugin": "^0.19.2",
+    "@types/bun": "^1.4.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,16 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #121212;
+  color: #e6e6e6;
+  font-family: "IBM Plex Sans Variable", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+button, input { font: inherit; color: inherit; }
+h1, h2, h3, p { margin: 0; }
+::selection { background: rgb(128 203 196 / 0.35); }
+dialog::backdrop { background: rgb(0 0 0 / 0.6); }

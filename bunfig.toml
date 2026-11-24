@@ -1,0 +1,3 @@
+# Compiles StyleX in the web app when the server bundles src/web/index.html.
+[serve.static]
+plugins = ["./stylex.plugin.ts"]
