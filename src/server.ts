@@ -140,6 +140,8 @@ export async function startServer(cfg: Config, { dev = false, retryMs = 10_000 }
     maxRequestBodySize: 2 * 1024 ** 3,
     routes: {
       "/": app,
+      // The Home Screen icon, at the fixed address web/manifest.webmanifest names.
+      "/icon.png": () => new Response(Bun.file(join(import.meta.dir, "web/icon.png"))),
       "/api/status": { GET: api(async () => json(await status())) },
       "/api/folders": {
         GET: api(async () =>

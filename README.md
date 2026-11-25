@@ -81,7 +81,7 @@ other device is only the screen. [Tailscale](https://tailscale.com) connects the
 
 - On the computer: `bun run serve --tailnet`, with Ollama running and the computer awake. The link from step 3 stays on.
 - On the other device: Tailscale on, open the address. On an iPhone or iPad, Safari's share button has
-  **Add to Home Screen**, which gives it an icon like an app.
+  **Add to Home Screen**: the app then has its own icon and opens full-screen, without Safari's bars, like an installed app.
 - On the computer itself keep using `http://127.0.0.1:4477`. Its own tailnet address is for the other devices; opening it
   from the same computer failed with a certificate error when this was tried.
 

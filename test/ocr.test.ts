@@ -215,6 +215,11 @@ test("server: upload, list, read, search; folders are separate; refuses other ho
   const url = (p: string) => root("/api/folders/default" + p.replace(/^\/api/, ""));
   await samplePdf(tmp, "upload.pdf", ["only page"]);
   expect(((await (await fetch(root("/api/folders"))).json()) as any).folders).toEqual([]); // a new install has no folder
+  // what a phone asks for when the page is added to its Home Screen
+  const manifest = /rel="manifest" href="([^"]+)"/.exec(await (await fetch(root("/"))).text())![1]!;
+  const asked = (await (await fetch(new URL(manifest, root("/")))).json()) as any;
+  expect(asked).toMatchObject({ display: "standalone" });
+  expect((await fetch(root(asked.icons[0].src))).headers.get("content-type")).toBe("image/png");
   await fetch(root("/api/folders"), { method: "POST", body: JSON.stringify({ name: "default" }) });
 
   const form = new FormData();
